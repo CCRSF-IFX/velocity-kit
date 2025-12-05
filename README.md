@@ -195,7 +195,7 @@ If you use this tool in your research, please cite:
 
 ## Contact
 
-For questions or issues, please open an issue on [GitHub](https://github.com/yourusername/velocity-kit/issues).
+For questions or issues, please email ccrsfifx@nih.gov or open an issue on [GitHub](https://github.com/CCRSF-IFX/velocity-kit/issues).
 
 ## Changelog
 
