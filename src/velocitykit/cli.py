@@ -4,7 +4,7 @@ import argparse
 import sys
 import logging
 
-from .platforms import pipseq
+from .platforms import pipseq, tenx
 
 logger = logging.getLogger(__name__)
 
@@ -67,12 +67,23 @@ def main():
     )
     pipseq.add_arguments(pipseq_parser)
 
-    # 10x Genomics subcommand (placeholder)
+    # 10x Genomics subcommand
     tenx_parser = subparsers.add_parser(
         "prep-tenx",
-        help="Prepare velocity matrices from 10x Genomics outputs (Coming soon)",
+        help="Prepare velocity matrices from 10x Genomics CellRanger outputs",
+        description=(
+            "Build velocity-compatible spliced/unspliced matrices from two "
+            "10x Genomics CellRanger runs.\n\n"
+            "IMPORTANT:\n"
+            "  --total  must point to a CellRanger run with --include-introns flag\n"
+            "           (total = exonic + intronic).\n"
+            "  --exonic must point to the RAW/UNFILTERED exons-only count matrix\n"
+            "           (e.g., raw_feature_bc_matrix directory).\n"
+            "           Do NOT use filtered_feature_bc_matrix."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    tenx_parser.add_argument("--placeholder", help="Coming soon")
+    tenx.add_arguments(tenx_parser)
 
     # Parse Biosciences subcommand (placeholder)
     parse_parser = subparsers.add_parser(
@@ -103,8 +114,7 @@ def main():
     if args.platform == "prep-pipseq":
         pipseq.run(args)
     elif args.platform == "prep-tenx":
-        logger.error("10x Genomics support coming soon!")
-        sys.exit(1)
+        tenx.run(args)
     elif args.platform == "prep-parse":
         logger.error("Parse Biosciences support coming soon!")
         sys.exit(1)

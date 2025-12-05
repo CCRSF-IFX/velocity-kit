@@ -12,9 +12,8 @@ Standard RNA velocity methods expect **spliced** and **unspliced** counts, but m
 ### Supported Platforms
 
 - ✅ **Fluent BioSciences (PIPseq)** - via PIPseeker
-- 🚧 **10x Genomics** - Coming soon
+- ✅ **10x Genomics** - via CellRanger with `--include-introns`
 - 🚧 **Parse Biosciences** - Coming soon  
-- 🚧 **ScaleBio** - Coming soon
 
 ## Installation
 
@@ -27,8 +26,8 @@ pip install velocitykit
 ### From source
 
 ```bash
-git clone https://github.com/yourusername/velocity-kit.git
-cd velocity-kit
+git clone https://github.com/yourusername/velocitykit.git
+cd velocitykit
 pip install -e .
 ```
 
@@ -37,7 +36,7 @@ pip install -e .
 To run scVelo preprocessing:
 
 ```bash
-pip install velocity-kit[scvelo]
+pip install velocitykit[scvelo]
 ```
 
 For development:
@@ -51,25 +50,24 @@ pip install velocity-kit[dev]
 ### PIPseq (PIPseeker)
 
 ```bash
-# Generate both h5ad and loom files
 velocity-kit prep-pipseq \
   --total /path/to/pipseeker_total_run \
   --exonic /path/to/pipseeker_exons_only_run \
   --out-h5ad output.h5ad \
   --out-loom output.loom
+```
 
-# Or generate only h5ad
-velocity-kit prep-pipseq \
-  --total /path/to/pipseeker_total_run \
-  --exonic /path/to/pipseeker_exons_only_run \
-  --out-h5ad output.h5ad
+### 10x Genomics (CellRanger)
 
-# Or generate only loom
-velocity-kit prep-pipseq \
-  --total /path/to/pipseeker_total_run \
-  --exonic /path/to/pipseeker_exons_only_run \
+```bash
+velocity-kit prep-tenx \
+  --total /path/to/cellranger_with_introns/raw_feature_bc_matrix \
+  --exonic /path/to/cellranger_standard/raw_feature_bc_matrix \
+  --out-h5ad output.h5ad \
   --out-loom output.loom
 ```
+
+**Note**: You can specify just `--out-h5ad` or just `--out-loom` if you only need one format.
 
 ## Usage
 
@@ -81,7 +79,7 @@ velocity-kit <platform-command> [options]
 
 Available platform commands:
 - `prep-pipseq` - Prepare velocity matrices from PIPseeker outputs
-- `prep-tenx` - Prepare velocity matrices from 10x Genomics outputs (coming soon)
+- `prep-tenx` - Prepare velocity matrices from 10x Genomics CellRanger outputs
 - `prep-parse` - Prepare velocity matrices from Parse Biosciences outputs (coming soon)
 - `prep-scalebio` - Prepare velocity matrices from ScaleBio outputs (coming soon)
 
@@ -108,10 +106,62 @@ velocity-kit prep-pipseq \
   --total Analysis/total_run \
   --exonic Analysis/exonic_raw_run \
   --out-h5ad velocity.h5ad \
-  --out-loom velocity.loom \
   --run-scvelo-preproc \
   -v
 ```
+
+### 10x Genomics Detailed Usage
+
+#### Required Arguments
+
+- `--total`: Directory with CellRanger run using `--include-introns` flag (or path to `raw_feature_bc_matrix`)
+- `--exonic`: Directory with standard CellRanger run (exons only). Use RAW/UNFILTERED `raw_feature_bc_matrix`, NOT `filtered_feature_bc_matrix`
+- At least one of:
+  - `--out-h5ad`: Output `.h5ad` file path
+  - `--out-loom`: Output `.loom` file path
+
+#### Optional Arguments
+
+- `--genes-col`: Column index in `features.tsv` to use as gene ID (default: 1 for gene symbols)
+- `--run-scvelo-preproc`: Run basic scVelo preprocessing on the AnnData object
+- `-v, --verbose`: Increase verbosity level (use `-v` for info, `-vv` for debug)
+
+#### Example
+
+```bash
+# Method 1: Point to the count directories directly
+velocity-kit prep-tenx \
+  --total cellranger_introns/outs/raw_feature_bc_matrix \
+  --exonic cellranger_standard/outs/raw_feature_bc_matrix \
+  --out-h5ad velocity.h5ad \
+  -v
+
+# Method 2: Point to the parent directories (will auto-find raw_feature_bc_matrix)
+velocity-kit prep-tenx \
+  --total cellranger_introns/outs \
+  --exonic cellranger_standard/outs \
+  --out-loom velocity.loom \
+  --run-scvelo-preproc
+```
+
+#### How to Generate the Required CellRanger Runs
+
+1. **Standard run (exonic only)**:
+   ```bash
+   cellranger count --id=sample_exonic \
+     --transcriptome=/path/to/refdata \
+     --fastqs=/path/to/fastqs \
+     --sample=MySample
+   ```
+
+2. **Run with introns**:
+   ```bash
+   cellranger count --id=sample_with_introns \
+     --transcriptome=/path/to/refdata \
+     --fastqs=/path/to/fastqs \
+     --sample=MySample \
+     --include-introns
+   ```
 
 ### Python API
 
@@ -148,15 +198,21 @@ adata.write_loom("output.loom")
 
 ## Why Dual-Run Subtraction?
 
-For platforms like PIPseq that use complex molecular counting (MI correction, deduplication, multi-mapping resolution), BAM-based velocity methods are **invalid** because these counting transformations don't survive in the BAM file.
+For platforms that use complex molecular counting (MI correction, deduplication, multi-mapping resolution), BAM-based velocity methods can be **invalid** because these counting transformations don't survive in the BAM file.
 
-The correct approach:
+The **dual-run subtraction** approach:
 
 1. **Run your pipeline normally** → counts include exonic + intronic molecules
 2. **Run with exons-only mode** on the **raw/unfiltered** matrix → spliced-only molecules
 3. Compute: **unspliced = total - spliced**
 
 This preserves the platform's counting model and produces valid velocity layers.
+
+### When to Use Dual-Run Subtraction
+
+- ✅ **PIPseq**: Always use dual-run (BAM-based methods are incorrect)
+- ✅ **10x Genomics**: Recommended for consistency, especially with CellRanger ≥7.0
+- ⚠️ **Other platforms**: Evaluate whether platform-specific counting differs from simple read counting
 
 ## Important Notes
 
