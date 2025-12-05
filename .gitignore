@@ -79,6 +79,7 @@ Flowcell_*/
 **/star/
 **/logs/
 **/metrics/
+**/cache/**
 
 # Error logs and reports
 *errorLog*.txt
