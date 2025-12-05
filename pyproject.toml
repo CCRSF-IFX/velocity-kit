@@ -3,16 +3,16 @@ requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pipseq-velocity"
+name = "velocity-kit"
 version = "0.1.0"
-description = "Tools for generating RNA velocity-compatible matrices from PIPseeker outputs"
+description = "A cross-platform toolkit for building RNA velocity-ready spliced/unspliced matrices"
 readme = "README.md"
 requires-python = ">=3.7"
 license = {text = "MIT"}
 authors = [
     {name = "Shaojun Xie", email = "xies4@nih.gov"}
 ]
-keywords = ["bioinformatics", "single-cell", "RNA-velocity", "PIPseq", "PIPseeker"]
+keywords = ["bioinformatics", "single-cell", "RNA-velocity", "PIPseq", "10x-genomics", "parse-biosciences", "velocity"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
@@ -43,13 +43,13 @@ scvelo = ["scvelo>=0.2.4"]
 dev = ["pytest>=7.0", "black", "flake8", "mypy"]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/pipseq-velocity"
-Documentation = "https://github.com/yourusername/pipseq-velocity#readme"
-Repository = "https://github.com/yourusername/pipseq-velocity"
-"Bug Tracker" = "https://github.com/yourusername/pipseq-velocity/issues"
+Homepage = "https://github.com/yourusername/velocity-kit"
+Documentation = "https://github.com/yourusername/velocity-kit#readme"
+Repository = "https://github.com/yourusername/velocity-kit"
+"Bug Tracker" = "https://github.com/yourusername/velocity-kit/issues"
 
 [project.scripts]
-pipseeker-velocity = "pipseq_velocity.cli:main"
+velocity-kit = "velocitykit.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

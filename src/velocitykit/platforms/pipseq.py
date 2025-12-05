@@ -1,6 +1,5 @@
-"""Command-line interface for pipseq-velocity."""
+"""PIPseq/PIPseeker platform support for velocity-kit."""
 
-import argparse
 import logging
 from pathlib import Path
 
@@ -10,7 +9,7 @@ try:
 except ImportError:
     HAS_TQDM = False
 
-from .core import (
+from ..core import (
     load_10x_mtx,
     align_and_union,
     build_velocity_adata,
@@ -20,37 +19,8 @@ from .core import (
 logger = logging.getLogger(__name__)
 
 
-def setup_logging(verbosity: int = 1):
-    """Configure logging based on verbosity level."""
-    level = logging.WARNING
-    if verbosity == 1:
-        level = logging.INFO
-    elif verbosity >= 2:
-        level = logging.DEBUG
-
-    logging.basicConfig(
-        level=level,
-        format="[%(asctime)s] [%(levelname)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-
-
-def main():
-    """Main entry point for the pipseeker-velocity CLI."""
-    parser = argparse.ArgumentParser(
-        description=(
-            "Build velocity-compatible spliced/unspliced matrices from two "
-            "PIPseeker runs.\n\n"
-            "IMPORTANT:\n"
-            "  --total  must point to the run that includes introns "
-            "           (total = exonic + intronic).\n"
-            "  --exonic must point to the RAW/UNFILTERED exons-only run.\n"
-            "           Do NOT use a filtered exonic matrix, because the\n"
-            "           called-cell set may not match the total matrix."
-        ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-
+def add_arguments(parser):
+    """Add PIPseq-specific arguments to the argument parser."""
     parser.add_argument(
         "--total",
         required=True,
@@ -72,13 +42,11 @@ def main():
     )
     parser.add_argument(
         "--out-h5ad",
-        required=True,
-        help="Output .h5ad file path.",
+        help="Output .h5ad file path (optional if --out-loom is specified).",
     )
     parser.add_argument(
         "--out-loom",
-        required=True,
-        help="Output .loom file path.",
+        help="Output .loom file path (optional if --out-h5ad is specified).",
     )
     parser.add_argument(
         "--run-scvelo-preproc",
@@ -93,11 +61,17 @@ def main():
         help="Increase verbosity level (-v, -vv).",
     )
 
-    args = parser.parse_args()
-    setup_logging(args.verbose)
 
+def run(args):
+    """Run the PIPseq velocity matrix preparation pipeline."""
     total_dir = Path(args.total)
     ex_dir = Path(args.exonic)
+
+    # Validate output arguments
+    if not args.out_h5ad and not args.out_loom:
+        raise ValueError(
+            "At least one output format must be specified: --out-h5ad or --out-loom"
+        )
 
     # Directory validation
     if not total_dir.is_dir():
@@ -111,7 +85,9 @@ def main():
         "(before cell calling/filtering)."
     )
 
-    steps = 5 + int(args.run_scvelo_preproc)
+    # Count steps based on outputs
+    num_outputs = int(bool(args.out_h5ad)) + int(bool(args.out_loom))
+    steps = 4 + int(args.run_scvelo_preproc) + num_outputs
     if HAS_TQDM:
         pbar = tqdm(total=steps, desc="Pipeline", ncols=80)
     else:
@@ -155,24 +131,24 @@ def main():
         run_scvelo_preprocessing(adata)
         step_done()
 
-    out_h5ad = Path(args.out_h5ad)
-    out_loom = Path(args.out_loom)
+    # Write outputs
+    if args.out_h5ad:
+        out_h5ad = Path(args.out_h5ad)
+        logger.info(f"Writing .h5ad to {out_h5ad}")
+        adata.write_h5ad(str(out_h5ad))
+        step_done()
 
-    logger.info(f"Writing .h5ad to {out_h5ad}")
-    adata.write_h5ad(str(out_h5ad))
-    step_done()
-
-    logger.info(f"Writing .loom to {out_loom}")
-    adata.write_loom(str(out_loom))
-    step_done()
+    if args.out_loom:
+        out_loom = Path(args.out_loom)
+        logger.info(f"Writing .loom to {out_loom}")
+        adata.write_loom(str(out_loom))
+        step_done()
 
     if pbar is not None:
         pbar.close()
 
     logger.info("✅ Finished building velocity-compatible files.")
-    logger.info(f"H5AD: {out_h5ad}")
-    logger.info(f"LOOM: {out_loom}")
-
-
-if __name__ == "__main__":
-    main()
+    if args.out_h5ad:
+        logger.info(f"H5AD: {out_h5ad}")
+    if args.out_loom:
+        logger.info(f"LOOM: {out_loom}")
