@@ -1,0 +1,44 @@
+name: Run Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    name: Test on Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.7', '3.8', '3.9', '3.10', '3.11', '3.12']
+        
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+        
+    - name: Test package import
+      run: |
+        python -c "from velocitykit import load_10x_mtx, align_and_union, build_velocity_adata"
+        python -c "from velocitykit.platforms import pipseq, tenx, common"
+        
+    - name: Test CLI help
+      run: |
+        python -m velocitykit.cli --help
+        python -m velocitykit.cli prep-pipseq --help
+        python -m velocitykit.cli prep-tenx --help
+        
+    # Uncomment when you add actual tests
+    # - name: Run pytest
+    #   run: pytest tests/
