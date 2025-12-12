@@ -1,13 +1,7 @@
 # velocity-kit
 
 [![PyPI version](https://badge.fury.io/py/velocity-kit.svg)](https://badge.fury.io/py/velocity-kit)
-[![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)
-
-**A cross-platform toolkit for ## Contact
-
-For questions or issues, please:
-- Email: ccrsfifx@nih.gov
-- Open an issue on [GitHub](https://github.com/CCRSF-IFX/velocity-kit/issues)lding RNA velocity-ready spliced/unspliced matrices** from 10x Genomics, Parse Biosciences, ScaleBio, Fluent BioSciences (PIPseq), and other single-cell technologies.
+[![Python 3.7+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 
 ## Overview
 
@@ -226,7 +220,7 @@ Do NOT use a filtered exonic matrix, because the called-cell set may not match t
 
 ## Requirements
 
-- Python ≥ 3.7
+- Python ≥ 3.8
 - anndata ≥ 0.8.0
 - h5py ≥ 3.8.0
 - numpy ≥ 1.21.0
@@ -263,3 +257,9 @@ For questions or issues, please email ccrsfifx@nih.gov or open an issue on [GitH
 - PIPseq/PIPseeker support
 - Modular platform architecture
 - Python API for custom workflows
+
+## Contact
+
+For questions or issues, please:
+- Email: ccrsfifx@nih.gov
+- Open an issue on [GitHub](https://github.com/CCRSF-IFX/velocity-kit/issues)
