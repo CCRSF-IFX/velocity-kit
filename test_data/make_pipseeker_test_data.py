@@ -51,7 +51,8 @@ def write_10x_mtx_dir(out_dir, X, barcodes, genes):
 
 def generate_synthetic_counts(
     n_genes,
-    n_cells,
+    n_cells_filtered,
+    n_cells_raw,
     lambda_total,
     lambda_exonic_fraction,
     seed,
@@ -59,21 +60,29 @@ def generate_synthetic_counts(
     """
     Generate synthetic total and exonic count matrices with:
 
-        total = exonic + intronic
+        total = exonic + intronic (FILTERED cells)
+        exonic = exonic-only (RAW/UNFILTERED cells, includes low-quality cells)
+
+    The exonic matrix has MORE barcodes than total (mimics real PIPseq workflow).
+    For the overlapping cells:
         exonic <= total elementwise
 
     total ~ Poisson(lambda_total) per gene-cell
-    exonic ~ Binomial(total, p_exon)
+    exonic ~ Binomial(total, p_exon) for filtered cells
+    exonic ~ Poisson(lambda_total * p_exon * 0.1) for extra raw cells (background)
     p_exon varies by gene around lambda_exonic_fraction.
     """
     rng = np.random.default_rng(seed)
 
-    # Gene and barcode IDs
+    # Gene IDs
     genes = pd.Series(["Gene%05d" % i for i in range(n_genes)], dtype=str)
-    barcodes = pd.Series(["BC%05d" % i for i in range(n_cells)], dtype=str)
+    
+    # Barcodes: filtered cells are a subset of raw cells
+    barcodes_raw = pd.Series(["BC%05d" % i for i in range(n_cells_raw)], dtype=str)
+    barcodes_filtered = barcodes_raw[:n_cells_filtered].copy()
 
-    # Total counts (genes x cells)
-    total_counts = rng.poisson(lam=lambda_total, size=(n_genes, n_cells))
+    # Total counts (genes x filtered_cells) - this is the FILTERED dataset
+    total_counts = rng.poisson(lam=lambda_total, size=(n_genes, n_cells_filtered))
 
     # Gene-specific exon fractions, with some variation
     exon_frac_per_gene = np.clip(
@@ -81,16 +90,28 @@ def generate_synthetic_counts(
         0.05,
         0.95,
     )
-    exon_frac_matrix = exon_frac_per_gene[:, None]  # broadcast over cells
+    
+    # Exonic counts for FILTERED cells: binomial(total, p_exon)
+    exon_frac_matrix_filtered = exon_frac_per_gene[:, None]
+    exonic_counts_filtered = rng.binomial(n=total_counts, p=exon_frac_matrix_filtered)
+    assert np.all(exonic_counts_filtered <= total_counts)
 
-    # Exonic counts: binomial(total, p_exon)
-    exonic_counts = rng.binomial(n=total_counts, p=exon_frac_matrix)
-    assert np.all(exonic_counts <= total_counts)
+    # Exonic counts for EXTRA RAW cells (background/low-quality cells)
+    # These have lower counts (10% of typical exonic counts)
+    n_extra_cells = n_cells_raw - n_cells_filtered
+    lambda_background = lambda_total * lambda_exonic_fraction * 0.1
+    exonic_counts_background = rng.poisson(
+        lam=lambda_background, 
+        size=(n_genes, n_extra_cells)
+    )
+    
+    # Combine: exonic_raw = [filtered cells | background cells]
+    exonic_counts_raw = np.hstack([exonic_counts_filtered, exonic_counts_background])
 
     X_total = sp.coo_matrix(total_counts)
-    X_exonic = sp.coo_matrix(exonic_counts)
+    X_exonic = sp.coo_matrix(exonic_counts_raw)
 
-    return X_total, X_exonic, genes, barcodes
+    return X_total, X_exonic, genes, barcodes_filtered, barcodes_raw
 
 
 def main():
@@ -115,10 +136,16 @@ def main():
         help="Number of genes (default: 1000).",
     )
     parser.add_argument(
-        "--n-cells",
+        "--n-cells-filtered",
         type=int,
         default=200,
-        help="Number of cells/barcodes (default: 200).",
+        help="Number of FILTERED cells/barcodes in total run (default: 200).",
+    )
+    parser.add_argument(
+        "--n-cells-raw",
+        type=int,
+        default=500,
+        help="Number of RAW/UNFILTERED cells/barcodes in exonic run (default: 500, must be >= n-cells-filtered).",
     )
     parser.add_argument(
         "--lambda-total",
@@ -141,6 +168,12 @@ def main():
 
     args = parser.parse_args()
 
+    # Validate arguments
+    if args.n_cells_raw < args.n_cells_filtered:
+        parser.error(
+            f"--n-cells-raw ({args.n_cells_raw}) must be >= --n-cells-filtered ({args.n_cells_filtered})"
+        )
+
     out_root = Path(args.out_root)
     out_total = out_root / "total"
     out_exonic = out_root / "exonic_raw"
@@ -148,13 +181,15 @@ def main():
     print(
         "Generating synthetic PIPseeker-style test data with parameters:\n"
         "  genes                    = {n_genes}\n"
-        "  cells                    = {n_cells}\n"
+        "  cells (filtered, total)  = {n_cells_filtered}\n"
+        "  cells (raw, exonic)      = {n_cells_raw}\n"
         "  lambda_total             = {lambda_total}\n"
         "  lambda_exonic_fraction   = {lambda_exonic_fraction}\n"
         "  seed                     = {seed}\n"
         "  out_root                 = {out_root}\n".format(
             n_genes=args.n_genes,
-            n_cells=args.n_cells,
+            n_cells_filtered=args.n_cells_filtered,
+            n_cells_raw=args.n_cells_raw,
             lambda_total=args.lambda_total,
             lambda_exonic_fraction=args.lambda_exonic_fraction,
             seed=args.seed,
@@ -162,19 +197,20 @@ def main():
         )
     )
 
-    X_total, X_exonic, genes, barcodes = generate_synthetic_counts(
+    X_total, X_exonic, genes, barcodes_filtered, barcodes_raw = generate_synthetic_counts(
         n_genes=args.n_genes,
-        n_cells=args.n_cells,
+        n_cells_filtered=args.n_cells_filtered,
+        n_cells_raw=args.n_cells_raw,
         lambda_total=args.lambda_total,
         lambda_exonic_fraction=args.lambda_exonic_fraction,
         seed=args.seed,
     )
 
-    print("Writing total (exonic + intronic) dataset → total/ ...")
-    write_10x_mtx_dir(out_total, X_total, barcodes, genes)
+    print("Writing total (exonic + intronic) FILTERED dataset → total/ ...")
+    write_10x_mtx_dir(out_total, X_total, barcodes_filtered, genes)
 
-    print("Writing exonic-only RAW dataset → exonic_raw/ ...")
-    write_10x_mtx_dir(out_exonic, X_exonic, barcodes, genes)
+    print("Writing exonic-only RAW/UNFILTERED dataset → exonic_raw/ ...")
+    write_10x_mtx_dir(out_exonic, X_exonic, barcodes_raw, genes)
 
     print("Done.")
     print("  Total dir:  %s" % out_total)
