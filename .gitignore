@@ -80,6 +80,7 @@ Flowcell_*/
 **/logs/
 **/metrics/
 **/cache/**
+test.loom
 
 # Error logs and reports
 *errorLog*.txt
