@@ -126,61 +126,95 @@ def align_and_union(
     g2: pd.Series
 ) -> Tuple[sp.csr_matrix, sp.csr_matrix, pd.Index, pd.Index]:
     """
-    Align two matrices to the union of genes and barcodes.
-
+    Align two matrices to the union of genes but only the barcodes from X1 (total/filtered).
+    
+    This matches the typical velocity workflow where:
+    - X1 (total) contains FILTERED cells
+    - X2 (exonic) contains RAW/UNFILTERED cells (superset of X1 barcodes)
+    - Output matrices contain only the filtered cells from X1
+    
     Parameters
     ----------
     X1 : scipy.sparse.csr_matrix
-        First matrix (genes x barcodes)
+        Total matrix (genes x barcodes) - typically FILTERED cells
     bc1 : pd.Series
-        Barcodes for first matrix
+        Barcodes for total matrix (filtered cells to keep)
     g1 : pd.Series
-        Genes for first matrix
+        Genes for total matrix
     X2 : scipy.sparse.csr_matrix
-        Second matrix (genes x barcodes)
+        Exonic matrix (genes x barcodes) - typically RAW/UNFILTERED cells
     bc2 : pd.Series
-        Barcodes for second matrix
+        Barcodes for exonic matrix (should be superset of bc1)
     g2 : pd.Series
-        Genes for second matrix
+        Genes for exonic matrix
 
     Returns
     -------
     X1u : scipy.sparse.csr_matrix
-        First matrix aligned to union
+        Total matrix aligned to union genes and bc1 barcodes
     X2u : scipy.sparse.csr_matrix
-        Second matrix aligned to union
+        Exonic matrix aligned to union genes and bc1 barcodes
     genes_union : pd.Index
         Union of gene IDs
-    barcodes_union : pd.Index
-        Union of barcode IDs
+    barcodes_final : pd.Index
+        Barcodes from X1 (filtered cells only)
     """
-    logger.info("Computing union of genes and barcodes...")
+    logger.info("Aligning matrices...")
+    
+    # Use union of genes (keep all genes from both runs)
     genes_union = pd.Index(sorted(set(g1) | set(g2)))
-    barcodes_union = pd.Index(sorted(set(bc1) | set(bc2)))
+    
+    # Use barcodes from X1 only (filtered cells)
+    barcodes_final = pd.Index(sorted(bc1))
+    
     logger.info(
-        f"Union: {len(genes_union)} genes, {len(barcodes_union)} barcodes."
+        f"Output dimensions: {len(genes_union)} genes x {len(barcodes_final)} barcodes (from total/filtered)"
     )
-
-    # Extra check: are exonic barcodes suspiciously smaller / subset of total?
+    
+    # Check barcode overlap
     set_bc1 = set(bc1)
     set_bc2 = set(bc2)
-    inter = len(set_bc1 & set_bc2)
-    if inter == len(set_bc2) and len(set_bc2) < len(set_bc1):
+    barcodes_intersection = set_bc1 & set_bc2
+    
+    logger.info(
+        f"Barcode overlap: {len(barcodes_intersection)}/{len(bc1)} "
+        f"({100*len(barcodes_intersection)/len(bc1):.1f}%) of filtered cells found in exonic run"
+    )
+    
+    if len(barcodes_intersection) < len(bc1) * 0.5:
         logger.warning(
-            "Exonic barcodes appear to be a strict subset of total barcodes.\n"
-            "This often happens if you used a *filtered* exonic matrix instead of "
-            "the raw/unfiltered exonic matrix. For velocity, you should point "
-            "--exonic to the raw (unfiltered) exons-only run."
+            f"Only {len(barcodes_intersection)}/{len(bc1)} filtered barcodes found in exonic run. "
+            f"This may indicate a barcode mismatch between runs."
         )
-
+    
+    # Check if exonic has MORE barcodes (expected for raw/unfiltered)
+    if len(bc2) > len(bc1):
+        logger.info(
+            f"Exonic run has {len(bc2)} barcodes (raw/unfiltered), "
+            f"total run has {len(bc1)} barcodes (filtered). This is expected."
+        )
+    elif len(bc2) == len(bc1):
+        logger.warning(
+            "Exonic and total runs have the same number of barcodes. "
+            "For velocity analysis, the exonic run should typically be RAW/UNFILTERED "
+            "(more barcodes than the filtered total run)."
+        )
+    else:
+        logger.warning(
+            "Exonic run has FEWER barcodes than total run. "
+            "This is unusual - make sure you're using the RAW/UNFILTERED exonic matrix."
+        )
+    
+    # Create index maps
     g1_map = pd.Series(np.arange(len(g1)), index=g1)
     g2_map = pd.Series(np.arange(len(g2)), index=g2)
     bc1_map = pd.Series(np.arange(len(bc1)), index=bc1)
     bc2_map = pd.Series(np.arange(len(bc2)), index=bc2)
 
     def scatter(X_src, gmap, bcmap, label):
+        """Align source matrix to final gene and barcode space."""
         genes_common = genes_union.intersection(gmap.index)
-        bc_common = barcodes_union.intersection(bcmap.index)
+        bc_common = barcodes_final.intersection(bcmap.index)
 
         logger.info(
             f"[{label}] Overlap: {len(genes_common)} genes, {len(bc_common)} barcodes."
@@ -190,29 +224,32 @@ def align_and_union(
             logger.warning(
                 f"[{label}] No overlapping genes or barcodes. Matrix will be all zeros."
             )
-            return sp.csr_matrix((len(genes_union), len(barcodes_union)))
+            return sp.csr_matrix((len(genes_union), len(barcodes_final)))
 
+        # Get source indices
         src_g_idx = gmap[genes_common].values
         src_bc_idx = bcmap[bc_common].values
         X_sub = X_src[src_g_idx[:, None], src_bc_idx]
 
+        # Get destination indices
         dest_g_idx = genes_union.get_indexer(genes_common)
-        dest_bc_idx = barcodes_union.get_indexer(bc_common)
+        dest_bc_idx = barcodes_final.get_indexer(bc_common)
 
+        # Remap to destination space
         X_sub = X_sub.tocoo()
         X_sub.row = dest_g_idx[X_sub.row]
         X_sub.col = dest_bc_idx[X_sub.col]
 
-        X_union = sp.csr_matrix(
+        X_aligned = sp.csr_matrix(
             (X_sub.data, (X_sub.row, X_sub.col)),
-            shape=(len(genes_union), len(barcodes_union)),
+            shape=(len(genes_union), len(barcodes_final)),
         )
-        return X_union
+        return X_aligned
 
     X1u = scatter(X1, g1_map, bc1_map, label="total")
     X2u = scatter(X2, g2_map, bc2_map, label="exonic")
 
-    return X1u, X2u, genes_union, barcodes_union
+    return X1u, X2u, genes_union, barcodes_final
 
 
 def build_velocity_adata(
