@@ -1,7 +1,7 @@
 # velocity-kit
 
 [![PyPI version](https://badge.fury.io/py/velocity-kit.svg)](https://badge.fury.io/py/velocity-kit)
-[![Python 3.7+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)
 
 ## Overview
 
@@ -220,16 +220,19 @@ Do NOT use a filtered exonic matrix, because the called-cell set may not match t
 
 ## Requirements
 
-- Python ≥ 3.8
+- Python ≥ 3.7
 - anndata ≥ 0.8.0
-- h5py ≥ 3.8.0
-- numpy ≥ 1.21.0
+- h5py ≥ 3.0.0 (< 3.8.0 for Python 3.7 compatibility)
+- loompy ≥ 3.0.6
+- numpy ≥ 1.21.0 (< 2.0.0 to avoid breaking changes)
 - pandas ≥ 1.3.0
 - scipy ≥ 1.7.0
 - tqdm ≥ 4.60.0
 
 Optional:
 - scvelo ≥ 0.2.4 (for preprocessing)
+
+**Note**: See [DEPENDENCY_COMPATIBILITY.md](DEPENDENCY_COMPATIBILITY.md) for detailed compatibility information across Python versions.
 
 ## Contributing
 
