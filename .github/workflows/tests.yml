@@ -9,24 +9,10 @@ on:
 jobs:
   test:
     name: Test on Python ${{ matrix.python-version }}
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        include:
-          # Python 3.7 requires older Ubuntu
-          - python-version: '3.7'
-            os: ubuntu-20.04
-          # Python 3.8-3.12 work on latest Ubuntu
-          - python-version: '3.8'
-            os: ubuntu-latest
-          - python-version: '3.9'
-            os: ubuntu-latest
-          - python-version: '3.10'
-            os: ubuntu-latest
-          - python-version: '3.11'
-            os: ubuntu-latest
-          - python-version: '3.12'
-            os: ubuntu-latest
+        python-version: ['3.7', '3.8', '3.9', '3.10', '3.11', '3.12']
       fail-fast: false  # Continue testing other versions even if one fails
         
     steps:
@@ -42,6 +28,34 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -e ".[dev]"
+        
+    - name: Verify dependency versions
+      run: |
+        echo "Python version:"
+        python --version
+        echo ""
+        echo "Installed packages:"
+        pip list | grep -E "(h5py|numpy|pandas|scipy|anndata|loompy)"
+        echo ""
+        # Verify h5py version based on Python version
+        PYTHON_VERSION=$(python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+        H5PY_VERSION=$(python -c "import h5py; print(h5py.__version__)")
+        echo "Python $PYTHON_VERSION → h5py $H5PY_VERSION"
+        if [[ "$PYTHON_VERSION" == "3.7" ]]; then
+          # Python 3.7 should get h5py <3.8
+          if [[ "${H5PY_VERSION%%.*}" -ge 3 ]] && [[ "${H5PY_VERSION#*.}" -ge 8 ]]; then
+            echo "ERROR: Python 3.7 should have h5py <3.8.0, got $H5PY_VERSION"
+            exit 1
+          fi
+          echo "✓ Python 3.7 has h5py <3.8.0"
+        else
+          # Python 3.8+ should get h5py >=3.10
+          if [[ "${H5PY_VERSION%%.*}" -lt 3 ]] || [[ "${H5PY_VERSION#*.}" -lt 10 ]]; then
+            echo "ERROR: Python 3.8+ should have h5py >=3.10.0, got $H5PY_VERSION"
+            exit 1
+          fi
+          echo "✓ Python 3.8+ has h5py >=3.10.0"
+        fi
         
     - name: Test package import
       run: |
