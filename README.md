@@ -222,7 +222,9 @@ Do NOT use a filtered exonic matrix, because the called-cell set may not match t
 
 - Python ≥ 3.7
 - anndata ≥ 0.8.0
-- h5py ≥ 3.0.0 (< 3.8.0 for Python 3.7 compatibility)
+- h5py ≥ 3.0.0 (automatically selects best version for your Python)
+  - Python 3.7: h5py 3.0-3.7
+  - Python 3.8+: h5py 3.10+
 - loompy ≥ 3.0.6
 - numpy ≥ 1.21.0 (< 2.0.0 to avoid breaking changes)
 - pandas ≥ 1.3.0
@@ -232,7 +234,7 @@ Do NOT use a filtered exonic matrix, because the called-cell set may not match t
 Optional:
 - scvelo ≥ 0.2.4 (for preprocessing)
 
-**Note**: See [DEPENDENCY_COMPATIBILITY.md](DEPENDENCY_COMPATIBILITY.md) for detailed compatibility information across Python versions.
+**Note**: Dependencies use environment markers to automatically select the best versions for your Python version. See [DEPENDENCY_COMPATIBILITY.md](docs/DEPENDENCY_COMPATIBILITY.md) for details.
 
 ## Contributing
 
