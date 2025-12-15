@@ -331,9 +331,12 @@ def run_scvelo_preprocessing(adata: ad.AnnData) -> None:
         raise
 
     scv.logging.print_version_and_date()
-    scv.pp.filter_genes(adata, min_shared_counts=10)
-    scv.pp.normalize_per_cell(adata)
-    scv.pp.log1p(adata)
+    # scv.pp.filter_genes(adata, min_shared_counts=10)
+    # scv.pp.normalize_per_cell(adata)
+    # scv.pp.filter_genes_dispersion(adata, n_top_genes=2000)
+    # scv.pp.log1p(adata)
+    scv.pp.filter_and_normalize(adata, min_shared_counts=20, n_top_genes=2000)
     scv.pp.moments(adata, n_pcs=30, n_neighbors=30)
-
+    scv.pl.proportions(adata)
+    
     logger.info("scVelo preprocessing finished.")

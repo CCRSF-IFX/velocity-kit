@@ -68,7 +68,7 @@ def run_dual_subtraction(
 
     # Count steps based on outputs
     num_outputs = int(bool(args.out_h5ad)) + int(bool(args.out_loom))
-    steps = 4 + int(args.run_scvelo_preproc) + num_outputs
+    steps = 4 + num_outputs
     if HAS_TQDM:
         pbar = tqdm(total=steps, desc="Pipeline", ncols=80)
     else:
@@ -111,11 +111,6 @@ def run_dual_subtraction(
     logger.info("Building velocity-compatible AnnData...")
     adata = build_velocity_adata(X_total_u, X_exon_u, genes_u, bc_u)
     step_done()
-
-    if args.run_scvelo_preproc:
-        logger.info("Running scVelo preprocessing as requested.")
-        run_scvelo_preprocessing(adata)
-        step_done()
 
     # Write outputs
     if args.out_h5ad:
@@ -217,11 +212,6 @@ def add_standard_arguments(parser, platform_name: str, default_genes_col: int = 
     parser.add_argument(
         "--out-loom",
         help="Output .loom file path (optional if --out-h5ad is provided).",
-    )
-    parser.add_argument(
-        "--run-scvelo-preproc",
-        action="store_true",
-        help="If set, run basic scVelo preprocessing on the AnnData object.",
     )
     parser.add_argument(
         "-v",

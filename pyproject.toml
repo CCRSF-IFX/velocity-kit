@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "velocity-kit"
-version = "0.1.1"
+version = "0.1.2"
 description = "A cross-platform toolkit for building RNA velocity-ready spliced/unspliced matrices"
 readme = "README.md"
 requires-python = ">=3.8"
