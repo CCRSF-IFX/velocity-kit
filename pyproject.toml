@@ -7,7 +7,7 @@ name = "velocity-kit"
 version = "0.1.1"
 description = "A cross-platform toolkit for building RNA velocity-ready spliced/unspliced matrices"
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.8"
 license = {text = "MIT"}
 authors = [
     {name = "Shaojun Xie", email = "xies4@nih.gov"}
@@ -19,18 +19,17 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Bio-Informatics",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.7",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 
 dependencies = [
     "anndata>=0.8.0",
-    "h5py>=3.0.0,<3.8.0; python_version < '3.8'",
-    "h5py>=3.10.0; python_version >= '3.8'",
+    "h5py>=3.8.0",
     "loompy>=3.0.6",
     "numpy>=1.21.0,<2.0.0",
     "pandas>=1.3.0",
@@ -59,10 +58,10 @@ where = ["src"]
 
 [tool.black]
 line-length = 88
-target-version = ['py37', 'py38', 'py39', 'py310', 'py311', 'py312']
+target-version = ['py38', 'py39', 'py310', 'py311', 'py312', 'py313']
 
 [tool.mypy]
-python_version = "3.7"
+python_version = "3.8"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false

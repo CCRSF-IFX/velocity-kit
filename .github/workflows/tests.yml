@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ['3.7', '3.8', '3.9', '3.10', '3.11', '3.12']
+        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12', '3.13']
       fail-fast: false  # Continue testing other versions even if one fails
         
     steps:
@@ -37,25 +37,16 @@ jobs:
         echo "Installed packages:"
         pip list | grep -E "(h5py|numpy|pandas|scipy|anndata|loompy)"
         echo ""
-        # Verify h5py version based on Python version
+        # Verify h5py version
         PYTHON_VERSION=$(python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
         H5PY_VERSION=$(python -c "import h5py; print(h5py.__version__)")
         echo "Python $PYTHON_VERSION → h5py $H5PY_VERSION"
-        if [[ "$PYTHON_VERSION" == "3.7" ]]; then
-          # Python 3.7 should get h5py <3.8
-          if [[ "${H5PY_VERSION%%.*}" -ge 3 ]] && [[ "${H5PY_VERSION#*.}" -ge 8 ]]; then
-            echo "ERROR: Python 3.7 should have h5py <3.8.0, got $H5PY_VERSION"
-            exit 1
-          fi
-          echo "✓ Python 3.7 has h5py <3.8.0"
-        else
-          # Python 3.8+ should get h5py >=3.10
-          if [[ "${H5PY_VERSION%%.*}" -lt 3 ]] || [[ "${H5PY_VERSION#*.}" -lt 10 ]]; then
-            echo "ERROR: Python 3.8+ should have h5py >=3.10.0, got $H5PY_VERSION"
-            exit 1
-          fi
-          echo "✓ Python 3.8+ has h5py >=3.10.0"
+        # All Python versions should get h5py >=3.8
+        if [[ "${H5PY_VERSION%%.*}" -lt 3 ]] || [[ "${H5PY_VERSION#*.}" -lt 8 ]]; then
+          echo "ERROR: Should have h5py >=3.8.0, got $H5PY_VERSION"
+          exit 1
         fi
+        echo "✓ h5py >=3.8.0"
         
     - name: Test package import
       run: |
