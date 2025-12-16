@@ -11,6 +11,29 @@ import scvelo as scv
 import matplotlib.pyplot as plt
 
 
+def load_loom(path: str):
+    """
+    Load a loom file using scVelo's read function.
+    
+    Handles compatibility between older scvelo versions (using read_loom)
+    and newer versions (using read).
+    
+    Parameters
+    ----------
+    path : str
+        Path to the .loom file.
+    
+    Returns
+    -------
+    adata : AnnData
+        The loaded AnnData object.
+    """
+    if hasattr(scv, "read"):
+        return scv.read(path, cache=True)
+    else:
+        return scv.read_loom(path, cache=True)
+
+
 def run_scvelo_and_generate_report(
     loom_path: str,
     output_dir: str,
@@ -50,7 +73,7 @@ def run_scvelo_and_generate_report(
     # Load data
     # -------------------------------------------------------------------------
     print(f"[{sample_name}] Reading loom file: {loom_path}")
-    adata = scv.read(loom_path, cache=True)
+    adata = load_loom(loom_path)
     # Optional: if barcodes are rownames etc, you may want:
     # adata.var_names_make_unique()
 
