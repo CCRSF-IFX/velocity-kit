@@ -53,6 +53,16 @@ def run_scvelo_and_generate_report(
     adata = sc.read(loom_path, cache=True)
     # Optional: if barcodes are rownames etc, you may want:
     # adata.var_names_make_unique()
+    
+    # Fix categorical columns that may cause issues with newer pandas
+    # Convert any categorical columns to regular strings to avoid
+    # "property 'categories' of 'Categorical' object has no setter" errors
+    for col in adata.obs.columns:
+        if hasattr(adata.obs[col], 'cat'):
+            adata.obs[col] = adata.obs[col].astype(str)
+    for col in adata.var.columns:
+        if hasattr(adata.var[col], 'cat'):
+            adata.var[col] = adata.var[col].astype(str)
 
     # -------------------------------------------------------------------------
     # Basic QC and preprocessing
