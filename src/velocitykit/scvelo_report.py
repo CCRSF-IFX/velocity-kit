@@ -10,7 +10,6 @@ import scanpy as sc
 import scvelo as scv
 import matplotlib.pyplot as plt
 
-
 def run_scvelo_and_generate_report(
     loom_path: str,
     output_dir: str,
@@ -50,9 +49,7 @@ def run_scvelo_and_generate_report(
     # Load data
     # -------------------------------------------------------------------------
     print(f"[{sample_name}] Reading loom file: {loom_path}")
-    adata = sc.read(loom_path, cache=True)
-    # Optional: if barcodes are rownames etc, you may want:
-    # adata.var_names_make_unique()
+    adata = sc.read(loom_path)
     
     # Fix categorical columns that may cause issues with newer pandas
     # Convert any categorical columns to regular strings to avoid
@@ -64,39 +61,47 @@ def run_scvelo_and_generate_report(
         if hasattr(adata.var[col], 'cat'):
             adata.var[col] = adata.var[col].astype(str)
 
+    print(f"[{sample_name}] Data loaded: {adata.n_obs} cells × {adata.n_vars} genes")
+
     # -------------------------------------------------------------------------
-    # Basic QC and preprocessing
+    # scVelo preprocessing - following scvelo_example.py
     # -------------------------------------------------------------------------
-    print(f"[{sample_name}] Running basic QC and preprocessing")
+    print(f"[{sample_name}] Running preprocessing and filtering")
+    
+    # Filter and normalize (combined step from scVelo)
+    scv.pp.filter_and_normalize(adata, min_shared_counts=20, n_top_genes=2000)
+    
+    # Compute moments for velocity estimation
+    scv.pp.moments(adata, n_pcs=30, n_neighbors=30)
 
-    # Common scanpy QC metrics
-    sc.pp.calculate_qc_metrics(adata, inplace=True)
+    # -------------------------------------------------------------------------
+    # Velocity computation - following scvelo_example.py
+    # -------------------------------------------------------------------------
+    print(f"[{sample_name}] Computing RNA velocity")
+    
+    # Run velocity estimation
+    scv.tl.velocity(adata)
+    scv.tl.velocity_graph(adata)
 
-    # scVelo preprocessing
-    scv.pp.filter_and_normalize(
-        adata,
-        min_shared_counts=20,   # reasonably conservative default
-        n_top_genes=2000
-    )
-    scv.pp.moments(
-        adata,
-        n_pcs=30,
-        n_neighbors=30
-    )
-
-    # Embedding (UMAP)
+    # -------------------------------------------------------------------------
+    # Embedding (UMAP) - following scvelo_example.py
+    # -------------------------------------------------------------------------
+    print(f"[{sample_name}] Computing embeddings")
+    
+    # Compute PCA and neighbors
     sc.tl.pca(adata)
     sc.pp.neighbors(adata, n_neighbors=30, n_pcs=30)
     sc.tl.umap(adata)
 
     # -------------------------------------------------------------------------
-    # Velocity computation
+    # Optional: Additional metrics for QC
     # -------------------------------------------------------------------------
-    print(f"[{sample_name}] Estimating velocities")
-    scv.tl.velocity(adata, mode="stochastic")
-    scv.tl.velocity_graph(adata)
-
-    # Optional additional metrics
+    print(f"[{sample_name}] Computing QC metrics")
+    
+    # Calculate QC metrics
+    sc.pp.calculate_qc_metrics(adata, inplace=True)
+    
+    # Velocity confidence (optional but useful for QC)
     scv.tl.velocity_confidence(adata)
 
     # -------------------------------------------------------------------------
@@ -209,21 +214,38 @@ def run_scvelo_and_generate_report(
     save_current_fig("velocity_stream_umap.png")
 
     # -------------------------------------------------------------------------
+    # Clustering (Leiden) - useful for grouping cells
+    # -------------------------------------------------------------------------
+    print(f"[{sample_name}] Computing Leiden clustering")
+    sc.tl.leiden(adata, resolution=0.1)
+    
+    # Plot UMAP colored by clusters
+    sc.pl.umap(adata, color='leiden', show=False)
+    generated_plots.append(
+        ("umap_leiden_clusters.png", "UMAP colored by Leiden clusters")
+    )
+    save_current_fig("umap_leiden_clusters.png")
+
+    # -------------------------------------------------------------------------
     # Top velocity genes heatmap (optional but useful)
     # -------------------------------------------------------------------------
-    print(f"[{sample_name}] Computing top velocity genes")
-    scv.tl.rank_velocity_genes(adata, groupby=None, n_genes=50)
-    scv.pl.rank_velocity_genes(
-        adata,
-        n_genes=20,
-        sharey=False,
-        show=False
-    )
-    generated_plots.append(
-        ("rank_velocity_genes.png",
-         "Top velocity genes (rank_velocity_genes)")
-    )
-    save_current_fig("rank_velocity_genes.png")
+    # print(f"[{sample_name}] Computing top velocity genes")
+    # scv.tl.rank_velocity_genes(adata, groupby='leiden', n_genes=50)
+    # print(f"[{sample_name}] Generating top velocity genes heatmap")
+    # # scv.pl.rank_velocity_genes(
+    # #     adata,
+    # #     n_genes=20,
+    # #     sharey=False,
+    # #     show=False
+    # # )
+    # scv.pl.scatter(adata, 
+    #         basis=adata.uns["rank_velocity_genes"]["names"]["Beta"][:4])
+    # print(f"[{sample_name}] Generating top velocity genes plot")
+    # generated_plots.append(
+    #     ("rank_velocity_genes.png",
+    #      "Top velocity genes (rank_velocity_genes)")
+    # )
+    # save_current_fig("rank_velocity_genes.png")
 
     # -------------------------------------------------------------------------
     # Build simple HTML report
