@@ -10,6 +10,22 @@ from .platforms import pipseq, tenx
 logger = logging.getLogger(__name__)
 
 
+def get_version():
+    """Get package version from metadata."""
+    try:
+        # Try to import from package
+        from . import __version__
+        return __version__
+    except ImportError:
+        # Try modern importlib.metadata (Python 3.8+)
+        try:
+            from importlib.metadata import version
+            return version("velocity-kit")
+        except Exception:
+            # Fallback to hardcoded version if package not installed
+            return "0.1.3"
+
+
 def setup_logging(verbosity: int = 1):
     """Configure logging based on verbosity level."""
     level = logging.WARNING
@@ -40,7 +56,7 @@ def main():
     parser.add_argument(
         "--version",
         action="version",
-        version="%(prog)s 0.1.0",
+        version=f"%(prog)s {get_version()}",
     )
 
     subparsers = parser.add_subparsers(
