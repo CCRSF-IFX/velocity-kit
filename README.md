@@ -1,23 +1,7 @@
 # velocity-kit
 
 [![PyPI version](https://badge.fury.io/py/velocity-kit.svg)](https://badge.fury.io/py/velocity-kit)
-[![Python 3.8+](htt- `--genes-col`: Column index in `features.tsv` to use as gene ID (default: 1 for gene symbols)
-- `-v, --verbose`: Increase verbosity level (use `-v` for info, `-vv` for debug)
-
-> **💡 Tip**: For comprehensive velocity analysis with QC plots, use the `run-scvelo` command. See [scVelo Analysis Report](#scvelo-analysis-report).
-
-#### Example
-
-```bash
-# Method 1: Point to the count directories directly
-velocity-kit prep-tenx \
-  --total cellranger_introns/outs/raw_feature_bc_matrix \
-  --exonic cellranger_standard/outs/raw_feature_bc_matrix \
-  --out-loom velocity.loom \
-  -v
-
-# Generate analysis report
-velocity-kit run-scvelo velocity.loom -o reports/sample1io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 
 ## Overview
 
@@ -233,16 +217,42 @@ velocity-kit run-scvelo velocity.loom
 The report includes:
 - **QC plots**: Total counts, gene counts, spliced/unspliced proportions
 - **Velocity embeddings**: UMAP with velocity arrows and stream plots
+- **Clustering**: Leiden community detection (resolution=0.1)
 - **Top velocity genes**: Ranked genes driving velocity patterns
 - **HTML report**: All plots combined in an interactive HTML file
 
+#### Features (v0.2.0+)
+
+- **Adaptive parameters**: Automatically adjusts `n_neighbors` and `n_pcs` for small datasets (<50 cells)
+- **Robust gene alignment**: Uses scanpy for reliable data loading and processing
+- **Leiden clustering**: Modern community detection algorithm (replaces deprecated Louvain)
+- **Velocyto compatibility**: Output format matches velocyto standard for downstream tools
+
 ### Python API
+
+```python
+from velocitykit import build_velocity_adata_from_anndata
+import scanpy as sc
+
+# Load matrices using scanpy (recommended in v0.2.0+)
+adata_total = sc.read_10x_mtx("total_run/raw_feature_bc_matrix", var_names='gene_symbols', gex_only=True)
+adata_exonic = sc.read_10x_mtx("exonic_run/raw_feature_bc_matrix", var_names='gene_symbols', gex_only=True)
+
+# Build velocity-compatible AnnData with proper gene alignment
+adata = build_velocity_adata_from_anndata(adata_total, adata_exonic)
+
+# Save in multiple formats
+adata.write_h5ad("output.h5ad")
+adata.write_loom("output.loom")
+```
+
+#### Legacy API (v0.1.x)
 
 ```python
 from velocitykit import load_10x_mtx, align_and_union, build_velocity_adata
 from pathlib import Path
 
-# Load matrices
+# Load matrices (manual approach)
 X_total, bc_total, g_total = load_10x_mtx(
     Path("total_run/matrix.mtx.gz"),
     Path("total_run/barcodes.tsv.gz"),
@@ -268,6 +278,8 @@ adata = build_velocity_adata(X_total_u, X_exon_u, genes_u, bc_u)
 adata.write_h5ad("output.h5ad")
 adata.write_loom("output.loom")
 ```
+
+**Note**: The scanpy-based approach (v0.2.0+) is more robust and handles edge cases better. The legacy API is maintained for backward compatibility.
 
 ## Why Dual-Run Subtraction?
 
@@ -295,46 +307,32 @@ Do NOT use a filtered exonic matrix, because the called-cell set may not match t
 
 ## Requirements
 
+### Core Dependencies
+
 - Python ≥ 3.8
 - anndata ≥ 0.8.0
-- h5py ≥ 3.8.0
+- h5py ≥ 3.10.0
+- leidenalg ≥ 0.8.0
 - loompy ≥ 3.0.6
-- numpy ≥ 1.21.0 (< 2.0.0 to avoid breaking changes)
+- numpy ≥ 1.21.0 (supports numpy 2.x)
 - pandas ≥ 1.3.0
+- scanpy ≥ 1.9.0
 - scipy ≥ 1.7.0
 - tqdm ≥ 4.60.0
 
-Optional:
-- scvelo ≥ 0.2.4 (for preprocessing)
+### Optional Dependencies
 
-**Note**: Python 3.7 support was dropped in v0.2.0. For older Python versions, use velocity-kit v0.1.x.
+- scvelo ≥ 0.2.4 (for velocity analysis and reports)
 
-## Contributing
+### Compatibility Notes
 
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-MIT License - see LICENSE file for details.
+- ✅ **NumPy 2.x**: Fully supported as of v0.2.0
+- ✅ **Pandas 2.x**: Categorical column handling fixed in v0.2.0
+- ⚠️ **Python 3.7**: Support dropped in v0.2.0. Use velocity-kit v0.1.x for Python 3.7
 
 ## Citation
 
-If you use this tool in your research, please cite:
-
-```
-[Add citation information here]
-```
-
-## Contact
-
-For questions or issues, please email ccrsfifx@nih.gov or open an issue on [GitHub](https://github.com/CCRSF-IFX/velocity-kit/issues).
-
-## Changelog
-
-### v0.1.0 (Initial Release)
-- PIPseq/PIPseeker support
-- Modular platform architecture
-- Python API for custom workflows
+If you use this tool in your research, please cite: https://github.com/CCRSF-IFX/velocitykit
 
 ## Contact
 
