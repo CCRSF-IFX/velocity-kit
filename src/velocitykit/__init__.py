@@ -12,7 +12,13 @@ This package provides utilities to convert platform-specific count matrices into
 spliced/unspliced matrices suitable for RNA velocity analysis.
 """
 
-__version__ = "0.1.0"
+import warnings
+
+# Suppress known deprecation warnings from dependencies
+warnings.filterwarnings('ignore', category=UserWarning, module='louvain')
+warnings.filterwarnings('ignore', message='pkg_resources is deprecated')
+
+__version__ = "0.1.3"
 __author__ = "Shaojun Xie"
 __email__ = "xies4@nih.gov"
 
