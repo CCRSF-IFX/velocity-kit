@@ -60,14 +60,32 @@ def run_scvelo_and_generate_report(
     # Fix categorical columns that may cause issues with newer pandas
     # Convert any categorical columns to regular strings to avoid
     # "property 'categories' of 'Categorical' object has no setter" errors
-    for col in adata.obs.columns:
-        if hasattr(adata.obs[col], 'cat'):
-            adata.obs[col] = adata.obs[col].astype(str)
-    for col in adata.var.columns:
-        if hasattr(adata.var[col], 'cat'):
-            adata.var[col] = adata.var[col].astype(str)
+    # for col in adata.obs.columns:
+    #     if hasattr(adata.obs[col], 'cat'):
+    #         adata.obs[col] = adata.obs[col].astype(str)
+    # for col in adata.var.columns:
+    #     if hasattr(adata.var[col], 'cat'):
+    #         adata.var[col] = adata.var[col].astype(str)
 
     print(f"[{sample_name}] Data loaded: {adata.n_obs} cells × {adata.n_vars} genes")
+
+    # -------------------------------------------------------------------------
+    # Adaptive parameters based on cell count
+    # -------------------------------------------------------------------------
+    n_cells = adata.n_obs
+    
+    # Set n_neighbors adaptively (never more than n_cells - 1)
+    # Standard: 30, but scale down for small datasets
+    if n_cells < 50:
+        n_neighbors = max(5, min(15, n_cells - 1))
+        print(f"[{sample_name}] Small dataset detected ({n_cells} cells), using n_neighbors={n_neighbors}")
+    else:
+        n_neighbors = 30
+    
+    # Set n_pcs adaptively (never more than min(n_cells, n_genes) - 1)
+    n_pcs = min(30, n_cells - 1, adata.n_vars - 1)
+    if n_pcs < 30:
+        print(f"[{sample_name}] Using n_pcs={n_pcs} (limited by dataset size)")
 
     # -------------------------------------------------------------------------
     # scVelo preprocessing - following scvelo_example.py
@@ -75,10 +93,23 @@ def run_scvelo_and_generate_report(
     print(f"[{sample_name}] Running preprocessing and filtering")
     
     # Filter and normalize (combined step from scVelo)
-    scv.pp.filter_and_normalize(adata, min_shared_counts=20, n_top_genes=2000)
+    # scv.pp.filter_and_normalize(adata, min_shared_counts=20, n_top_genes=2000)
+    # If your data are raw counts in adata.X, this is typical:
+    sc.pp.normalize_total(adata, target_sum=1e4)
+    sc.pp.log1p(adata)  # <-- replaces scVelo's deprecated log1p
+
+    # Optional but recommended for velocity workflows:
+    sc.pp.highly_variable_genes(adata, n_top_genes=2000)
+    adata = adata[:, adata.var["highly_variable"]].copy()
+
+    # PCA + neighbors must be computed explicitly now (scVelo >= 0.4)
+    sc.pp.scale(adata, max_value=10)        # optional; many people do it
+    # Compute PCA and neighbors (use adaptive parameters)
+    sc.tl.pca(adata, n_comps=n_pcs)
+    sc.pp.neighbors(adata, n_neighbors=n_neighbors, n_pcs=n_pcs)
     
     # Compute moments for velocity estimation
-    scv.pp.moments(adata, n_pcs=30, n_neighbors=30)
+    scv.pp.moments(adata, n_pcs=n_pcs, n_neighbors=n_neighbors)
 
     # -------------------------------------------------------------------------
     # Velocity computation - following scvelo_example.py
@@ -94,9 +125,6 @@ def run_scvelo_and_generate_report(
     # -------------------------------------------------------------------------
     print(f"[{sample_name}] Computing embeddings")
     
-    # Compute PCA and neighbors
-    sc.tl.pca(adata)
-    sc.pp.neighbors(adata, n_neighbors=30, n_pcs=30)
     sc.tl.umap(adata)
 
     # -------------------------------------------------------------------------
