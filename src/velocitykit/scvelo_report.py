@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import os
+import warnings
 from datetime import datetime
 from typing import Optional
 
+import pandas as pd
 import scanpy as sc
 import scvelo as scv
 import matplotlib.pyplot as plt
+
+# Suppress known deprecation warnings from dependencies
+warnings.filterwarnings('ignore', category=UserWarning, module='louvain')
+warnings.filterwarnings('ignore', message='pkg_resources is deprecated')
 
 def run_scvelo_and_generate_report(
     loom_path: str,
