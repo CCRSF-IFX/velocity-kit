@@ -18,7 +18,7 @@ import warnings
 warnings.filterwarnings('ignore', category=UserWarning, module='louvain')
 warnings.filterwarnings('ignore', message='pkg_resources is deprecated')
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 __author__ = "Shaojun Xie"
 __email__ = "xies4@nih.gov"
 

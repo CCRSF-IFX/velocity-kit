@@ -23,7 +23,7 @@ def get_version():
             return version("velocity-kit")
         except Exception:
             # Fallback to hardcoded version if package not installed
-            return "0.2.0"
+            return "0.2.1"
 
 
 def setup_logging(verbosity: int = 1):
