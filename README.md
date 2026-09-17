@@ -336,7 +336,8 @@ velocity-kit run-scvelo velocity.loom
 #### Output
 
 The report includes:
-- **QC plots**: Total counts, gene counts, spliced/unspliced proportions
+- **QC plots**: Input total counts and gene counts calculated before gene filtering,
+  plus spliced/unspliced proportions
 - **Velocity embeddings**: UMAP with velocity arrows and stream plots
 - **Metadata embeddings**: One UMAP for each requested `--color-by` column
 - **Clustering**: Leiden community detection (resolution=0.1)

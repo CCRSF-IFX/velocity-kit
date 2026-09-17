@@ -256,6 +256,16 @@ def subset_cells(
     selected.uns["velocitykit_cell_subset"] = details
     return selected, details
 
+
+def calculate_input_qc_metrics(adata) -> None:
+    """Calculate per-cell QC from the input matrix before gene filtering."""
+    sc.pp.calculate_qc_metrics(adata, percent_top=None, inplace=True)
+    adata.uns["velocitykit_input_qc"] = {
+        "matrix": "X",
+        "n_genes_before_filtering": int(adata.n_vars),
+    }
+
+
 def run_scvelo_and_generate_report(
     loom_path: str,
     output_dir: str,
@@ -364,6 +374,8 @@ def run_scvelo_and_generate_report(
     #         adata.var[col] = adata.var[col].astype(str)
 
     print(f"[{sample_name}] Data loaded: {adata.n_obs} cells × {adata.n_vars} genes")
+    print(f"[{sample_name}] Computing input QC metrics before gene filtering")
+    calculate_input_qc_metrics(adata)
 
     # -------------------------------------------------------------------------
     # Adaptive parameters based on cell count
@@ -424,13 +436,10 @@ def run_scvelo_and_generate_report(
     sc.tl.umap(adata)
 
     # -------------------------------------------------------------------------
-    # Optional: Additional metrics for QC
+    # Optional: Velocity metrics for QC
     # -------------------------------------------------------------------------
-    print(f"[{sample_name}] Computing QC metrics")
-    
-    # Calculate QC metrics
-    sc.pp.calculate_qc_metrics(adata, inplace=True)
-    
+    print(f"[{sample_name}] Computing velocity QC metrics")
+
     # Velocity confidence (optional but useful for QC)
     scv.tl.velocity_confidence(adata)
 
@@ -464,7 +473,7 @@ def run_scvelo_and_generate_report(
     )
     save_current_fig("qc_total_counts.png")
 
-    # 2. Number of genes per cell
+    # 2. Number of genes per cell in the input matrix, before HVG filtering.
     sc.pl.violin(
         adata,
         ["n_genes_by_counts"],
@@ -473,7 +482,10 @@ def run_scvelo_and_generate_report(
         show=False
     )
     generated_plots.append(
-        ("qc_n_genes_by_counts.png", "QC: Number of genes per cell")
+        (
+            "qc_n_genes_by_counts.png",
+            "QC: Number of genes per cell before gene filtering",
+        )
     )
     save_current_fig("qc_n_genes_by_counts.png")
 

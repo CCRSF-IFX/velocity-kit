@@ -10,6 +10,7 @@ from anndata import AnnData
 from velocitykit.scvelo_report import (
     _plot_filename,
     attach_cell_metadata,
+    calculate_input_qc_metrics,
     subset_cells,
 )
 
@@ -140,3 +141,28 @@ def test_subset_cells_rejects_unknown_column_or_value():
         subset_cells(adata, "missing", ["E6"])
     with pytest.raises(ValueError, match="Requested values were not found"):
         subset_cells(adata, "sample", ["E9"])
+
+
+def test_input_qc_metrics_are_calculated_before_gene_filtering():
+    adata = AnnData(
+        X=np.array(
+            [
+                [1, 0, 2, 0],
+                [0, 3, 4, 5],
+                [0, 0, 0, 6],
+            ]
+        )
+    )
+
+    calculate_input_qc_metrics(adata)
+    expected_genes = [2, 3, 1]
+    expected_counts = [3, 12, 6]
+
+    # Simulate downstream HVG selection. Observation-level input QC is retained.
+    adata = adata[:, :2].copy()
+    assert adata.obs["n_genes_by_counts"].tolist() == expected_genes
+    assert adata.obs["total_counts"].tolist() == expected_counts
+    assert adata.uns["velocitykit_input_qc"] == {
+        "matrix": "X",
+        "n_genes_before_filtering": 4,
+    }
