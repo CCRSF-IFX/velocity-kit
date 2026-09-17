@@ -282,7 +282,10 @@ By default, all inputs must contain exactly the same unique gene identifiers;
 gene order may differ and is aligned automatically. Use
 `--gene-join intersection` explicitly to retain only genes shared by every
 input. `X` is standardized to the `spliced` layer, while both kinetic layers
-and assembly provenance are preserved.
+and assembly provenance are preserved. When inputs provide stable gene IDs in
+standard `var` columns, VelocityKit verifies that every displayed feature name
+maps to the same stable ID across files and writes the result to
+`var["velocitykit_gene_id"]`.
 
 ### Velocity-Aware Batch Correction
 

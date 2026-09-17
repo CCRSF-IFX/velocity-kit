@@ -90,3 +90,59 @@ def test_assemble_rejects_duplicate_source_labels(tmp_path):
 
     with pytest.raises(ValueError, match="source labels must be unique"):
         assemble_from_manifest(str(manifest))
+
+
+def test_assemble_rejects_conflicting_stable_gene_identities(tmp_path):
+    for name, stable_id, count in (
+        ("first", "stable-A", 1),
+        ("second", "stable-B", 2),
+    ):
+        adata = AnnData(
+            X=np.asarray([[count]]),
+            obs=pd.DataFrame(index=[f"cell-{name}"]),
+            var=pd.DataFrame(
+                {"gene_id": [stable_id]},
+                index=["SAME_SYMBOL"],
+            ),
+        )
+        adata.layers["spliced"] = adata.X.copy()
+        adata.layers["unspliced"] = adata.X.copy()
+        adata.write_h5ad(tmp_path / f"{name}.h5ad")
+
+    manifest = tmp_path / "samples.csv"
+    pd.DataFrame(
+        {
+            "path": ["first.h5ad", "second.h5ad"],
+            "source": ["first", "second"],
+        }
+    ).to_csv(manifest, index=False)
+
+    with pytest.raises(ValueError, match="different stable gene identities"):
+        assemble_from_manifest(str(manifest))
+
+
+def test_assemble_preserves_canonical_stable_gene_identity(tmp_path):
+    for name, count in (("first", 1), ("second", 2)):
+        adata = AnnData(
+            X=np.asarray([[count]]),
+            obs=pd.DataFrame(index=[f"cell-{name}"]),
+            var=pd.DataFrame(
+                {"gene_id": ["stable-A"]},
+                index=["DISPLAY_NAME"],
+            ),
+        )
+        adata.layers["spliced"] = adata.X.copy()
+        adata.layers["unspliced"] = adata.X.copy()
+        adata.write_h5ad(tmp_path / f"{name}.h5ad")
+
+    manifest = tmp_path / "samples.csv"
+    pd.DataFrame(
+        {
+            "path": ["first.h5ad", "second.h5ad"],
+            "source": ["first", "second"],
+        }
+    ).to_csv(manifest, index=False)
+
+    combined = assemble_from_manifest(str(manifest))
+
+    assert combined.var["velocitykit_gene_id"].tolist() == ["stable-A"]

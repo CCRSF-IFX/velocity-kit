@@ -16,6 +16,15 @@ from .io import read_velocity_input
 
 logger = logging.getLogger(__name__)
 
+STABLE_GENE_ID_COLUMNS = (
+    "velocitykit_gene_id",
+    "gene_ids",
+    "gene_id",
+    "Accession",
+    "accession",
+    "gene",
+)
+
 
 def add_arguments(parser) -> None:
     """Add manifest-driven assembly arguments to an argparse parser."""
@@ -120,6 +129,35 @@ def _annotate_input(adata, row: pd.Series, source_key: str) -> None:
         adata.obs[column] = value
 
 
+def _stable_gene_ids(adata, path: Path) -> pd.Series:
+    """Return one validated stable identifier for every displayed feature name."""
+    for column in STABLE_GENE_ID_COLUMNS:
+        if column not in adata.var:
+            continue
+        values = adata.var[column]
+        if values.isna().any():
+            raise ValueError(
+                f"Stable gene identifier column {column!r} contains missing "
+                f"values in {path}"
+            )
+        identifiers = values.astype(str)
+        if not identifiers.is_unique:
+            raise ValueError(
+                f"Stable gene identifier column {column!r} is not unique in {path}"
+            )
+        return pd.Series(
+            identifiers.to_numpy(),
+            index=adata.var_names.astype(str),
+            name="velocitykit_gene_id",
+        )
+
+    return pd.Series(
+        adata.var_names.astype(str),
+        index=adata.var_names.astype(str),
+        name="velocitykit_gene_id",
+    )
+
+
 def assemble_from_manifest(
     manifest_path: str,
     gene_join: str = "exact",
@@ -144,6 +182,7 @@ def assemble_from_manifest(
     labels = _source_labels(manifest, paths)
 
     inputs = []
+    input_gene_ids = []
     input_n_obs = []
     input_n_vars = []
     for (_, row), path, label in zip(manifest.iterrows(), paths, labels):
@@ -153,9 +192,11 @@ def assemble_from_manifest(
             raise ValueError(f"Input {path} contains duplicate cell identifiers")
         if not adata.var_names.is_unique:
             raise ValueError(f"Input {path} contains duplicate gene identifiers")
+        stable_gene_ids = _stable_gene_ids(adata, path)
         _annotate_input(adata, row, source_key)
         adata.X = adata.layers["spliced"].copy()
         inputs.append(adata)
+        input_gene_ids.append(stable_gene_ids)
         input_n_obs.append(int(adata.n_obs))
         input_n_vars.append(int(adata.n_vars))
 
@@ -180,7 +221,31 @@ def assemble_from_manifest(
         if not genes_to_keep:
             raise ValueError("Assembly inputs have no genes in common")
 
-    aligned = [adata[:, genes_to_keep].copy() for adata in inputs]
+    reference_ids = input_gene_ids[0].reindex(genes_to_keep)
+    for path, stable_ids in zip(paths[1:], input_gene_ids[1:]):
+        candidate_ids = stable_ids.reindex(genes_to_keep)
+        conflicts = candidate_ids != reference_ids
+        if conflicts.any():
+            examples = [
+                (
+                    gene,
+                    str(reference_ids.loc[gene]),
+                    str(candidate_ids.loc[gene]),
+                )
+                for gene in reference_ids.index[conflicts][:5]
+            ]
+            raise ValueError(
+                f"Displayed gene names map to different stable gene identities "
+                f"in {path}; examples (name, first ID, input ID): {examples}"
+            )
+
+    aligned = []
+    for adata, stable_ids in zip(inputs, input_gene_ids):
+        selected = adata[:, genes_to_keep].copy()
+        selected.var["velocitykit_gene_id"] = stable_ids.reindex(
+            genes_to_keep
+        ).to_numpy()
+        aligned.append(selected)
     combined = ad.concat(
         aligned,
         axis=0,
