@@ -130,6 +130,7 @@ Available platform commands:
 - `prep-parse` - Prepare velocity matrices directly from Parse Biosciences Split Pipe transcript assignments
 - `prep-scalebio` - Prepare velocity matrices from ScaleBio outputs (coming soon)
 - `assemble` - Combine multiple loom/H5AD inputs from a sample manifest
+- `correct-batch` - Correct batch effects while preserving spliced/unspliced ratios
 - `run-scvelo` - Run scVelo analysis and generate a report from loom or H5AD input
 
 ### PIPseq Detailed Usage
@@ -280,6 +281,35 @@ gene order may differ and is aligned automatically. Use
 `--gene-join intersection` explicitly to retain only genes shared by every
 input. `X` is standardized to the `spliced` layer, while both kinetic layers
 and assembly provenance are preserved.
+
+### Velocity-Aware Batch Correction
+
+`correct-batch` implements the
+[Hansen-ComBat strategy](https://www.hansenlab.org/velocity_batch): it jointly
+normalizes total spliced-plus-unspliced abundance, applies ComBat to
+`log1p(S + U)`, and reconstructs the two corrected layers using each original
+gene/cell spliced fraction. This removes abundance-scale batch effects without
+correcting spliced and unspliced independently and distorting their kinetic
+relationship.
+
+```bash
+velocity-kit correct-batch combined_velocity.h5ad \
+  --output combined_velocity_corrected.h5ad \
+  --batch-key batch \
+  --preserve-key sample cell_type \
+  --n-top-genes 2000
+```
+
+The batch column must contain at least two batches with at least two cells in
+each. Use `--preserve-key` only for biological covariates that should remain in
+the model; it cannot include the batch column. Strongly confounded batch and
+biological variables cannot be separated reliably. Use `--n-top-genes 0` to
+retain all genes, with higher memory use.
+
+The output is a canonical H5AD with normalized, corrected `spliced` and
+`unspliced` layers, `X = log1p(spliced)`, pre-correction per-cell QC metrics,
+and correction provenance. `run-scvelo` recognizes that provenance and skips a
+second normalization and variable-gene-selection pass.
 
 ### scVelo Analysis Report
 

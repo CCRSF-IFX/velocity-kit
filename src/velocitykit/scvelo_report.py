@@ -520,8 +520,14 @@ def run_scvelo_and_generate_report(
     #         adata.var[col] = adata.var[col].astype(str)
 
     print(f"[{sample_name}] Data loaded: {adata.n_obs} cells × {adata.n_vars} genes")
-    print(f"[{sample_name}] Computing input QC metrics before gene filtering")
-    calculate_input_qc_metrics(adata)
+    batch_corrected = "velocitykit_batch_correction" in adata.uns
+    if batch_corrected and {"n_genes_by_counts", "total_counts"}.issubset(
+        adata.obs.columns
+    ):
+        print(f"[{sample_name}] Using preserved pre-correction input QC metrics")
+    else:
+        print(f"[{sample_name}] Computing input QC metrics before gene filtering")
+        calculate_input_qc_metrics(adata)
 
     # -------------------------------------------------------------------------
     # Adaptive parameters based on cell count
@@ -545,16 +551,18 @@ def run_scvelo_and_generate_report(
     # scVelo preprocessing - following scvelo_example.py
     # -------------------------------------------------------------------------
     print(f"[{sample_name}] Running preprocessing and filtering")
-    
-    # Filter and normalize (combined step from scVelo)
-    # scv.pp.filter_and_normalize(adata, min_shared_counts=20, n_top_genes=2000)
-    # If your data are raw counts in adata.X, this is typical:
-    sc.pp.normalize_total(adata, target_sum=1e4)
-    sc.pp.log1p(adata)  # <-- replaces scVelo's deprecated log1p
 
-    # Optional but recommended for velocity workflows:
-    sc.pp.highly_variable_genes(adata, n_top_genes=2000)
-    adata = adata[:, adata.var["highly_variable"]].copy()
+    if batch_corrected:
+        print(
+            f"[{sample_name}] Detected velocity-kit batch correction; "
+            "skipping normalization and variable-gene selection"
+        )
+    else:
+        # Normalize X and retain 2,000 highly variable genes for analysis.
+        sc.pp.normalize_total(adata, target_sum=1e4)
+        sc.pp.log1p(adata)
+        sc.pp.highly_variable_genes(adata, n_top_genes=2000)
+        adata = adata[:, adata.var["highly_variable"]].copy()
 
     # PCA + neighbors must be computed explicitly now (scVelo >= 0.4)
     sc.pp.scale(adata, max_value=10)        # optional; many people do it

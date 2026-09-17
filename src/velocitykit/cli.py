@@ -5,7 +5,7 @@ import sys
 import logging
 import os
 
-from . import assemble
+from . import assemble, batch
 from .platforms import parsebio, pipseq, tenx
 
 logger = logging.getLogger(__name__)
@@ -135,6 +135,19 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     assemble.add_arguments(assemble_parser)
+
+    # Velocity-aware batch-correction subcommand
+    batch_parser = subparsers.add_parser(
+        "correct-batch",
+        help="Batch-correct total abundance while preserving spliced ratios",
+        description=(
+            "Apply the Hansen-ComBat strategy: jointly library-normalize spliced "
+            "and unspliced counts, correct log1p(S+U), and reconstruct corrected "
+            "layers while preserving S/(S+U)."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    batch.add_arguments(batch_parser)
 
     # scVelo Analysis subcommand
     scvelo_parser = subparsers.add_parser(
@@ -271,6 +284,8 @@ def main():
         sys.exit(1)
     elif args.platform == "assemble":
         assemble.run(args)
+    elif args.platform == "correct-batch":
+        batch.run(args)
     elif args.platform == "run-scvelo":
         run_scvelo(args)
     else:
