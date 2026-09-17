@@ -27,7 +27,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -e ".[dev]"
+        pip install -e ".[dev,scvelo]"
         
     - name: Verify dependency versions
       run: |
@@ -37,28 +37,29 @@ jobs:
         echo "Installed packages:"
         pip list | grep -E "(h5py|numpy|pandas|scipy|anndata|loompy)"
         echo ""
-        # Verify h5py version
-        PYTHON_VERSION=$(python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-        H5PY_VERSION=$(python -c "import h5py; print(h5py.__version__)")
-        echo "Python $PYTHON_VERSION → h5py $H5PY_VERSION"
-        # All Python versions should get h5py >=3.8
-        if [[ "${H5PY_VERSION%%.*}" -lt 3 ]] || [[ "${H5PY_VERSION#*.}" -lt 8 ]]; then
-          echo "ERROR: Should have h5py >=3.8.0, got $H5PY_VERSION"
-          exit 1
-        fi
-        echo "✓ h5py >=3.8.0"
+        python - <<'PY'
+        import h5py
+        from packaging.version import Version
+
+        assert Version(h5py.__version__) >= Version("3.10.0"), h5py.__version__
+        print(f"✓ h5py {h5py.__version__} >= 3.10.0")
+        PY
         
     - name: Test package import
       run: |
         python -c "from velocitykit import load_10x_mtx, align_and_union, build_velocity_adata"
         python -c "from velocitykit.platforms import pipseq, tenx, common"
+        python -c "from velocitykit import assemble, batch, scvelo_report"
         
     - name: Test CLI help
       run: |
         python -m velocitykit.cli --help
         python -m velocitykit.cli prep-pipseq --help
         python -m velocitykit.cli prep-tenx --help
-        
-    # Uncomment when you add actual tests
-    # - name: Run pytest
-    #   run: pytest tests/
+        python -m velocitykit.cli prep-parsebio --help
+        python -m velocitykit.cli assemble --help
+        python -m velocitykit.cli correct-batch --help
+        python -m velocitykit.cli run-scvelo --help
+
+    - name: Run pytest
+      run: python -m pytest -q
