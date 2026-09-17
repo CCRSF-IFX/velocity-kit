@@ -316,6 +316,10 @@ before ComBat. VelocityKit verifies that the resulting design has full rank and
 stops with a confounding error when batch and biological effects cannot be
 identified separately.
 
+Entries with zero original `S + U` remain structural zeros. Their spliced
+fraction is undefined, so VelocityKit never assigns ComBat-created abundance to
+either kinetic layer at those positions.
+
 The output is a canonical H5AD with normalized, corrected `spliced` and
 `unspliced` layers, `X = log1p(spliced)`, pre-correction per-cell QC metrics,
 and correction provenance. Pre-correction QC is calculated from the original

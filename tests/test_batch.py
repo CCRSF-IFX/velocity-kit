@@ -121,6 +121,25 @@ def test_hansen_combat_clips_negative_corrected_totals(monkeypatch):
     assert provenance["negative_structural_zero_totals_clipped"] == 0
 
 
+def test_hansen_combat_always_preserves_structural_zeros(monkeypatch):
+    adata = _velocity_adata()
+
+    def add_abundance_at_zero(combat_input, **_):
+        combat_input.X[0, 1] = np.log1p(10)
+
+    monkeypatch.setattr("velocitykit.batch.sc.pp.combat", add_abundance_at_zero)
+    corrected = hansen_combat_correct(
+        adata,
+        batch_key="batch",
+        min_shared_counts=0,
+        n_top_genes=0,
+    )
+
+    assert corrected.layers["spliced"][0, 1] == 0
+    assert corrected.layers["unspliced"][0, 1] == 0
+    assert corrected.uns["velocitykit_batch_correction"]["preserve_zeros"]
+
+
 @pytest.mark.parametrize(
     "batch_key,preserve_keys,message",
     [

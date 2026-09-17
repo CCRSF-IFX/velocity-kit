@@ -59,13 +59,6 @@ def add_arguments(parser) -> None:
         help="Batch-aware highly variable genes retained; use 0 for all (default: 2000)",
     )
     parser.add_argument(
-        "--no-preserve-zeros",
-        action="store_false",
-        dest="preserve_zeros",
-        help="Allow ComBat to make originally zero S+U entries nonzero",
-    )
-    parser.set_defaults(preserve_zeros=True)
-    parser.add_argument(
         "-v",
         "--verbose",
         action="count",
@@ -194,7 +187,6 @@ def hansen_combat_correct(
     target_sum: float = 1e4,
     min_shared_counts: int = 20,
     n_top_genes: Optional[int] = 2000,
-    preserve_zeros: bool = True,
 ):
     """Correct total S+U abundance with ComBat and preserve the spliced ratio."""
     preserve_keys = list(dict.fromkeys(preserve_keys or []))
@@ -278,8 +270,9 @@ def hansen_combat_correct(
     negative_observed = int(np.count_nonzero(negative_mask & ~zero_mask))
     negative_structural_zeros = negative_values - negative_observed
     np.maximum(corrected_total, 0, out=corrected_total)
-    if preserve_zeros:
-        corrected_total[zero_mask] = 0
+    # R = S/(S+U) is undefined where S+U is zero. Never invent a kinetic
+    # allocation for those entries after ComBat shifts their total abundance.
+    corrected_total[zero_mask] = 0
 
     corrected_spliced = corrected_total * ratio
     corrected_unspliced = corrected_total - corrected_spliced
@@ -326,7 +319,7 @@ def hansen_combat_correct(
         "n_top_genes": int(len(selected_genes)),
         "n_input_genes": int(adata.n_vars),
         "n_genes_after_shared_filter": int(len(filtered_genes)),
-        "preserve_zeros": bool(preserve_zeros),
+        "preserve_zeros": True,
         "negative_totals_clipped": negative_values,
         "negative_observed_totals_clipped": negative_observed,
         "negative_structural_zero_totals_clipped": negative_structural_zeros,
@@ -350,7 +343,6 @@ def run(args) -> None:
         target_sum=args.target_sum,
         min_shared_counts=args.min_shared_counts,
         n_top_genes=args.n_top_genes,
-        preserve_zeros=args.preserve_zeros,
     )
     corrected.uns["velocitykit_batch_correction"]["input_path"] = str(
         Path(args.input_path).resolve()
