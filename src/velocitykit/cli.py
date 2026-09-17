@@ -105,7 +105,7 @@ def main():
 
     # Parse Biosciences subcommand
     parse_parser = subparsers.add_parser(
-        "prep-parse",
+        "prep-parsebio",
         help="Prepare velocity matrices from Parse Biosciences Split Pipe outputs",
         description=(
             "Build velocity-compatible spliced/unspliced matrices directly from "
@@ -277,7 +277,7 @@ def main():
         pipseq.run(args)
     elif args.platform == "prep-tenx":
         tenx.run(args)
-    elif args.platform == "prep-parse":
+    elif args.platform == "prep-parsebio":
         parsebio.run(args)
     elif args.platform == "prep-scalebio":
         logger.error("ScaleBio support coming soon!")

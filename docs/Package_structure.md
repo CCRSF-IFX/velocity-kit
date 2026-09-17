@@ -42,10 +42,11 @@ scripts/                              # Main repository (Git root)
    - Default gene column: 1 (gene symbols)
    - Auto-detects `raw_feature_bc_matrix` subdirectories
 
-### 🚧 Planned
 3. **Parse Biosciences**
-   - Subcommand: `velocity-kit prep-parse` (placeholder)
+   - Subcommand: `velocity-kit prep-parsebio`
+   - Direct classification from Split Pipe transcript assignments
 
+### 🚧 Planned
 4. **ScaleBio**
    - Subcommand: `velocity-kit prep-scalebio` (placeholder)
 

@@ -88,7 +88,7 @@ Parse data are built directly from transcript assignments; an exons-only
 rerun is not required.
 
 ```bash
-velocity-kit prep-parse \
+velocity-kit prep-parsebio \
   --sublibrary /path/to/sublibrary1 \
   --sublibrary /path/to/sublibrary2 \
   --combined-metadata /path/to/combined-output \
@@ -107,7 +107,7 @@ If sublibrary results have moved since combine mode ran, specify their new
 parent location instead. Only the base folder names are taken from the log:
 
 ```bash
-velocity-kit prep-parse \
+velocity-kit prep-parsebio \
   --sublibraries-dir /new/location/of/sublibrary-results \
   --combined-metadata /path/to/combined-output \
   --out-h5ad parse_velocity.h5ad
@@ -127,7 +127,7 @@ Available platform commands:
 
 - `prep-pipseq` - Prepare velocity matrices from PIPseeker outputs
 - `prep-tenx` - Prepare velocity matrices from 10x Genomics CellRanger outputs
-- `prep-parse` - Prepare velocity matrices directly from Parse Biosciences Split Pipe transcript assignments
+- `prep-parsebio` - Prepare velocity matrices directly from Parse Biosciences Split Pipe transcript assignments
 - `prep-scalebio` - Prepare velocity matrices from ScaleBio outputs (coming soon)
 - `assemble` - Combine multiple loom/H5AD inputs from a sample manifest
 - `correct-batch` - Correct batch effects while preserving spliced/unspliced ratios
@@ -222,7 +222,7 @@ velocity-kit prep-tenx \
 
 ### Parse Biosciences Detailed Usage
 
-`prep-parse` follows the Parse Biosciences scVelo workflow: rows marked
+`prep-parsebio` follows the Parse Biosciences scVelo workflow: rows marked
 `exonic=True` in each transcript-assignment table become the `spliced` layer,
 and all other assigned transcripts become the `unspliced` layer. The main
 matrix contains their sum. Counts are streamed from the compressed files, so
@@ -463,7 +463,7 @@ adata = combine_parse_sublibraries([sublibrary], labels=["1"])
 adata.write_h5ad("parse_velocity.h5ad")
 ```
 
-For multiple Parse sublibraries, the `prep-parse` CLI is recommended because
+For multiple Parse sublibraries, the `prep-parsebio` CLI is recommended because
 it validates the `__sN` mapping against the combined Split Pipe output.
 
 #### Legacy API (v0.1.x)
@@ -530,7 +530,7 @@ This preserves the platform's counting model and produces valid velocity layers.
 
 ### Which Strategy Should I Use?
 
-- **Parse Biosciences**: Use `prep-parse` for direct classification from Split
+- **Parse Biosciences**: Use `prep-parsebio` for direct classification from Split
   Pipe transcript assignments.
 - **PIPseq**: Use `prep-pipseq` with matched standard and exons-only runs.
 - **10x Genomics**: Use `prep-tenx` with matched Cell Ranger runs with and
