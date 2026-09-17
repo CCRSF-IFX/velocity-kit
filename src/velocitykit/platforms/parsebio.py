@@ -54,10 +54,11 @@ def add_arguments(parser):
     parser.add_argument(
         "--gene-column",
         choices=("gene_name", "gene"),
-        default="gene_name",
+        default="gene",
         help=(
-            "Transcript-assignment column to use as var_names: gene_name for "
-            "symbols (default), or gene for stable gene IDs."
+            "Transcript-assignment column to use as var_names: gene for stable "
+            "gene IDs (default), or gene_name for symbols. Symbol mode rejects "
+            "symbols that map to multiple stable IDs."
         ),
     )
     parser.add_argument(
@@ -424,7 +425,7 @@ def _coo_parts_to_csr(
 def build_parse_sublibrary_adata(
     transcript_path: Path,
     metadata_path: Path,
-    gene_column: str = "gene_name",
+    gene_column: str = "gene",
     chunk_size: int = 1_000_000,
 ) -> ad.AnnData:
     """Build a velocity AnnData object from one Split Pipe sublibrary.
@@ -493,14 +494,24 @@ def build_parse_sublibrary_adata(
             chunk["_feature_key"] = chunk["_feature_key"].astype(str)
             chunk["exonic"] = _parse_exonic(chunk["exonic"], transcript_path)
 
-            unique_features = chunk.drop_duplicates("_feature_key")
+            unique_features = chunk.drop_duplicates(["_feature_key", "gene"])
             for key, gene_id, gene_name in unique_features[
                 ["_feature_key", "gene", "gene_name"]
             ].itertuples(index=False, name=None):
+                stable_id = str(gene_id) if pd.notna(gene_id) else str(key)
+                if key in gene_to_index:
+                    previous_id = str(gene_ids[key])
+                    if gene_column == "gene_name" and stable_id != previous_id:
+                        raise ValueError(
+                            f"Gene symbol {key!r} maps to multiple stable gene IDs "
+                            f"({previous_id!r}, {stable_id!r}) in {transcript_path}. "
+                            "Use --gene-column gene to preserve feature identity."
+                        )
+                    continue
                 if key not in gene_to_index:
                     gene_to_index[key] = len(genes)
                     genes.append(key)
-                    gene_ids[key] = gene_id if pd.notna(gene_id) else key
+                    gene_ids[key] = stable_id
                     gene_names[key] = gene_name if pd.notna(gene_name) else key
 
             chunk["_cell_index"] = chunk["bc_wells"].map(cell_to_index)

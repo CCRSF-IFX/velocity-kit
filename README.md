@@ -239,7 +239,9 @@ they do not need to be manually decompressed.
 
 #### Optional Arguments
 
-- `--gene-column`: Use `gene_name` (default) or stable IDs from `gene`.
+- `--gene-column`: Use stable IDs from `gene` (default), or `gene_name` for
+  symbols. Symbol mode stops if one symbol maps to multiple stable IDs rather
+  than merging biologically distinct features.
 - `--chunk-size`: Number of transcript rows processed at once (default:
   1,000,000).
 

@@ -80,7 +80,7 @@ def test_build_parse_sublibrary_counts_rows_and_filters_cells(tmp_path):
     adata = build_parse_sublibrary_adata(transcript_path, metadata_path, chunk_size=2)
 
     assert adata.obs_names.tolist() == ["01_01_01", "01_01_02"]
-    assert adata.var_names.tolist() == ["G1", "G2"]
+    assert adata.var_names.tolist() == ["ENSG1", "ENSG2"]
     np.testing.assert_array_equal(adata.layers["spliced"].toarray(), [[1, 1], [1, 0]])
     np.testing.assert_array_equal(adata.layers["unspliced"].toarray(), [[1, 0], [0, 0]])
     np.testing.assert_array_equal(adata.X.toarray(), [[2, 1], [1, 0]])
@@ -206,6 +206,33 @@ def test_missing_gene_symbol_falls_back_to_gene_id(tmp_path):
     assert adata.var.loc["ENSG1", "gene"] == "ENSG1"
     assert adata.var.loc["ENSG1", "gene_name"] == "ENSG1"
     assert int(adata.X.sum()) == 1
+
+
+def test_duplicate_gene_symbols_do_not_merge_stable_gene_ids(tmp_path):
+    sublibrary = _write_sublibrary(
+        tmp_path / "sub1",
+        ["01_01_01"],
+        [
+            _row("01_01_01", "ENSG1", "DUPLICATE", True),
+            _row("01_01_01", "ENSG2", "DUPLICATE", False),
+        ],
+    )
+    transcript_path, metadata_path = resolve_sublibrary_inputs(sublibrary)
+
+    adata = build_parse_sublibrary_adata(transcript_path, metadata_path)
+
+    assert adata.var_names.tolist() == ["ENSG1", "ENSG2"]
+    assert adata.var["gene_name"].tolist() == ["DUPLICATE", "DUPLICATE"]
+    np.testing.assert_array_equal(adata.layers["spliced"].toarray(), [[1, 0]])
+    np.testing.assert_array_equal(adata.layers["unspliced"].toarray(), [[0, 1]])
+
+    with pytest.raises(ValueError, match="maps to multiple stable gene IDs"):
+        build_parse_sublibrary_adata(
+            transcript_path,
+            metadata_path,
+            gene_column="gene_name",
+            chunk_size=1,
+        )
 
 
 def test_combined_metadata_must_include_every_generated_cell(tmp_path):
