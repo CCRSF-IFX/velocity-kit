@@ -18,6 +18,9 @@ import matplotlib.pyplot as plt
 
 from .io import read_velocity_input
 
+MIN_SCVELO_CELLS = 4
+MIN_SCVELO_GENES = 3
+
 # Suppress known deprecation warnings from dependencies
 warnings.filterwarnings('ignore', category=UserWarning, module='louvain')
 warnings.filterwarnings('ignore', message='pkg_resources is deprecated')
@@ -283,6 +286,21 @@ def _group_slug(value: str) -> str:
     return slug or "group"
 
 
+def _analysis_parameters(n_cells: int, n_genes: int) -> Tuple[int, int]:
+    """Validate analysis size and return bounded neighbors and PCs."""
+    if n_cells < MIN_SCVELO_CELLS:
+        raise ValueError(
+            f"scVelo analysis requires at least {MIN_SCVELO_CELLS} cells; "
+            f"received {n_cells}"
+        )
+    if n_genes < MIN_SCVELO_GENES:
+        raise ValueError(
+            f"scVelo analysis requires at least {MIN_SCVELO_GENES} genes; "
+            f"received {n_genes}"
+        )
+    return min(30, n_cells - 1), min(30, n_cells - 1, n_genes - 1)
+
+
 def _group_anndata_output(output_path: Optional[str], group: str) -> Optional[str]:
     if output_path is None:
         return None
@@ -464,6 +482,16 @@ def run_scvelo_and_generate_report(
             raise ValueError(f"Per-group column {group_by!r} contains missing values")
 
         values = list(pd.unique(adata.obs[group_by].astype(str)))
+        group_counts = adata.obs[group_by].astype(str).value_counts()
+        undersized = group_counts[group_counts < MIN_SCVELO_CELLS]
+        if len(undersized):
+            details = ", ".join(
+                f"{value} ({count})" for value, count in undersized.items()
+            )
+            raise ValueError(
+                f"Every per-group analysis requires at least {MIN_SCVELO_CELLS} "
+                f"cells; undersized groups: {details}"
+            )
         slugs = [_group_slug(value) for value in values]
         if len(set(slugs)) != len(slugs):
             raise ValueError(
@@ -533,17 +561,10 @@ def run_scvelo_and_generate_report(
     # Adaptive parameters based on cell count
     # -------------------------------------------------------------------------
     n_cells = adata.n_obs
-    
-    # Set n_neighbors adaptively (never more than n_cells - 1)
-    # Standard: 30, but scale down for small datasets
+    n_neighbors, n_pcs = _analysis_parameters(n_cells, adata.n_vars)
+
     if n_cells < 50:
-        n_neighbors = max(5, min(15, n_cells - 1))
         print(f"[{sample_name}] Small dataset detected ({n_cells} cells), using n_neighbors={n_neighbors}")
-    else:
-        n_neighbors = 30
-    
-    # Set n_pcs adaptively (never more than min(n_cells, n_genes) - 1)
-    n_pcs = min(30, n_cells - 1, adata.n_vars - 1)
     if n_pcs < 30:
         print(f"[{sample_name}] Using n_pcs={n_pcs} (limited by dataset size)")
 
@@ -571,7 +592,9 @@ def run_scvelo_and_generate_report(
     sc.pp.neighbors(adata, n_neighbors=n_neighbors, n_pcs=n_pcs)
     
     # Compute moments for velocity estimation
-    scv.pp.moments(adata, n_pcs=n_pcs, n_neighbors=n_neighbors)
+    # Reuse the Scanpy graph above. Supplying an independently larger neighbor
+    # count makes scVelo recompute the graph and breaks small datasets.
+    scv.pp.moments(adata, n_pcs=n_pcs, n_neighbors=None)
 
     # -------------------------------------------------------------------------
     # Velocity computation - following scvelo_example.py
@@ -608,6 +631,7 @@ def run_scvelo_and_generate_report(
         return filename  # return relative name for HTML
 
     generated_plots = []
+    plot_notes = []
 
     # -------------------------------------------------------------------------
     # QC plots
@@ -697,17 +721,28 @@ def run_scvelo_and_generate_report(
     save_current_fig("velocity_embedding_umap.png")
 
     # 7. Velocity stream plot on UMAP
-    scv.pl.velocity_embedding_stream(
-        adata,
-        basis="umap",
-        dpi=120,
-        show=False
-    )
-    generated_plots.append(
-        ("velocity_stream_umap.png",
-         "Velocity stream plot on UMAP")
-    )
-    save_current_fig("velocity_stream_umap.png")
+    try:
+        scv.pl.velocity_embedding_stream(
+            adata,
+            basis="umap",
+            n_neighbors=n_neighbors,
+            dpi=120,
+            show=False
+        )
+    except (ValueError, np.linalg.LinAlgError) as exc:
+        # Stream interpolation can be undefined for very small or degenerate
+        # embeddings. It is a presentation failure, not an analysis failure;
+        # retain the direct velocity-arrow plot and disclose the omission.
+        plt.close("all")
+        note = f"Velocity stream plot omitted: {exc}"
+        print(f"[{sample_name}] WARNING: {note}")
+        plot_notes.append(note)
+    else:
+        generated_plots.append(
+            ("velocity_stream_umap.png",
+             "Velocity stream plot on UMAP")
+        )
+        save_current_fig("velocity_stream_umap.png")
 
     # Additional UMAPs colored by user-selected cell metadata.
     for column in color_by:
@@ -828,6 +863,11 @@ def run_scvelo_and_generate_report(
                 "</ul>",
             ]
         )
+
+    if plot_notes:
+        html_parts.extend(["<h2>Plot notes</h2>", "<ul>"])
+        html_parts.extend(f"<li>{escape(note)}</li>" for note in plot_notes)
+        html_parts.append("</ul>")
 
     for filename, title in generated_plots:
         html_parts.append('<div class="plot-block">')

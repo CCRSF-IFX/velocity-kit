@@ -369,6 +369,9 @@ HTML index linking the group reports. If `--save-anndata analyzed.h5ad` is also
 used, per-group files are named `analyzed_<group>.h5ad`; a path containing
 `{group}` can be used as an explicit template.
 
+Every joint dataset or independent group must contain at least four cells and
+three genes. Undersized inputs stop before partial group analyses are written.
+
 #### Requirements
 
 This command requires scvelo and scanpy to be installed:

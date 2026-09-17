@@ -9,6 +9,7 @@ from anndata import AnnData, read_h5ad
 
 from velocitykit.io import read_velocity_input
 from velocitykit.scvelo_report import (
+    _analysis_parameters,
     _group_anndata_output,
     _plot_filename,
     _write_per_group_index,
@@ -260,3 +261,13 @@ def test_per_group_index_links_independent_reports(tmp_path):
     assert "Independent analyses grouped by <strong>sample</strong>" in html
     assert 'href="E6/E6_report.html"' in html
     assert "Cb_E7" in html
+
+
+def test_analysis_parameters_are_bounded_by_dataset_size():
+    assert _analysis_parameters(4, 3) == (3, 2)
+    assert _analysis_parameters(100, 2000) == (30, 30)
+
+    with pytest.raises(ValueError, match="at least 4 cells"):
+        _analysis_parameters(3, 100)
+    with pytest.raises(ValueError, match="at least 3 genes"):
+        _analysis_parameters(10, 2)
