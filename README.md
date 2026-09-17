@@ -11,7 +11,7 @@ layers in different ways. `velocity-kit` converts platform-native outputs into
 velocity-ready H5AD and loom files using the preparation strategy appropriate
 for each platform.
 
-VelocityKit is not limited to dual-run subtraction. It currently supports both
+`velocity-kit` is not limited to dual-run subtraction. It currently supports both
 direct transcript classification and subtraction of matched count runs:
 
 ### Supported Platforms
@@ -29,14 +29,14 @@ ScaleBio support is planned but not yet implemented.
 ### From PyPI (recommended)
 
 ```bash
-pip install velocitykit
+pip install velocity-kit
 ```
 
 ### From source
 
 ```bash
-git clone https://github.com/yourusername/velocitykit.git
-cd velocitykit
+git clone https://github.com/CCRSF-IFX/velocity-kit.git
+cd velocity-kit
 pip install -e .
 ```
 
@@ -45,7 +45,7 @@ pip install -e .
 To run scVelo preprocessing:
 
 ```bash
-pip install velocitykit[scvelo]
+pip install velocity-kit[scvelo]
 ```
 
 For development:
@@ -96,7 +96,7 @@ velocity-kit prep-parse \
   --out-loom parse_velocity.loom
 ```
 
-VelocityKit reads `process/tscp_assignment.csv.gz`, restricts counts to the
+`velocity-kit` reads `process/tscp_assignment.csv.gz`, restricts counts to the
 cells in `all-sample/DGE_filtered/cell_metadata.csv`, and reproduces the
 combined output's `__s1`, `__s2`, ... cell identities. When
 `--combined-metadata` points to the combined output directory, the Split Pipe
@@ -246,7 +246,7 @@ cutoffs. This reproduces Split Pipe's final called-cell set, including runs
 where samples within one sublibrary have different calling thresholds.
 
 Suffixes are never inferred from CLI position when combined results are
-provided. VelocityKit uses the ordered sublibrary paths recorded in the Split
+provided. `velocity-kit` uses the ordered sublibrary paths recorded in the Split
 Pipe log and verifies every local metadata row against the corresponding
 combined `__sN` partition. If only the CSV is supplied, a unique exact metadata
 match is required. Missing, inconsistent, or ambiguous mappings stop with an
@@ -385,7 +385,7 @@ adata.write_loom("output.loom")
 ### Direct Transcript Classification
 
 Parse Split Pipe records one row per assigned transcript and provides an
-`exonic` classification. VelocityKit uses this information directly:
+`exonic` classification. `velocity-kit` uses this information directly:
 
 1. Retain transcripts belonging to the filtered cells in each sublibrary.
 2. Assign `exonic=True` transcripts to the `spliced` layer.
@@ -425,7 +425,7 @@ must point to the **RAW/UNFILTERED** exons-only matrix.
 Do NOT use a filtered exonic matrix, because the called-cell set may not match the total matrix. This will cause barcode mismatches and incorrect velocity estimates.
 
 ⚠️ **For Parse Biosciences**: Prefer passing the combined Split Pipe
-output directory to `--combined-metadata`. This allows VelocityKit to use the
+output directory to `--combined-metadata`. This allows `velocity-kit` to use the
 combine log and validate each sublibrary's `__sN` suffix mapping.
 
 ## Requirements
@@ -455,7 +455,7 @@ combine log and validate each sublibrary's `__sN` suffix mapping.
 
 ## Citation
 
-If you use this tool in your research, please cite: https://github.com/CCRSF-IFX/velocitykit
+If you use this tool in your research, please cite: https://github.com/CCRSF-IFX/velocity-kit
 
 ## Contact
 
