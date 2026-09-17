@@ -280,6 +280,10 @@ def build_velocity_adata_from_anndata(
         - var: genes from the total matrix in their original order
     """
     # Step 1: Get filtered cell barcodes from total matrix
+    if not adata_total.obs_names.is_unique:
+        raise ValueError("Total matrix contains duplicate cell barcodes")
+    if not adata_exonic.obs_names.is_unique:
+        raise ValueError("Exonic matrix contains duplicate cell barcodes")
     barcodes_filtered = adata_total.obs_names
     n_filtered = len(barcodes_filtered)
     logger.info(f"Using {n_filtered} filtered cells from total matrix as reference")
@@ -294,27 +298,20 @@ def build_velocity_adata_from_anndata(
         f"({overlap_pct:.1f}% overlap)"
     )
     
-    # Quality check: should have high overlap
-    if overlap_pct < 50:
-        logger.error(
-            f"❌ LOW OVERLAP WARNING: Only {overlap_pct:.1f}% of filtered cells "
-            f"found in exonic matrix. This suggests a barcode mismatch problem!"
-        )
+    # Every called cell in the total matrix is authoritative. Silently dropping
+    # cells changes the analyzed cohort and can hide mismatched input runs.
+    if n_common != n_filtered:
+        missing = barcodes_filtered.difference(adata_exonic.obs_names)
         raise ValueError(
-            "Insufficient barcode overlap between total and exonic matrices. "
-            "Please verify that both matrices are from the same sample and "
-            "use compatible barcode formats."
+            f"Exonic matrix is missing {len(missing):,} of {n_filtered:,} "
+            "filtered total-matrix cells. Every filtered cell must be present; "
+            f"examples: {missing[:5].tolist()}"
         )
-    elif overlap_pct < 90:
-        logger.warning(
-            f"⚠️  Moderate overlap: {overlap_pct:.1f}%. "
-            f"Missing {n_filtered - n_common} cells from exonic matrix."
-        )
-    
-    # Step 3: Subset both matrices to common cells only
-    logger.info("Subsetting matrices to common cells...")
-    adata_total = adata_total[common_cells, :].copy()
-    adata_exonic = adata_exonic[common_cells, :].copy()
+
+    # Step 3: Preserve total-matrix cell order and discard only extra raw cells.
+    logger.info("Aligning exonic cells to the filtered total matrix order...")
+    adata_total = adata_total[barcodes_filtered, :].copy()
+    adata_exonic = adata_exonic[barcodes_filtered, :].copy()
     
     # Step 4: Require one unambiguous, identical feature set. Filling absent
     # genes with zero would manufacture spliced counts that were never present

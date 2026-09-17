@@ -43,3 +43,22 @@ def test_dual_subtraction_rejects_duplicate_gene_identifiers():
 
     with pytest.raises(ValueError, match="duplicate gene identifiers"):
         build_velocity_adata_from_anndata(total, exonic)
+
+
+def test_dual_subtraction_requires_every_filtered_cell():
+    total = _adata([[5], [7]], ["cell-a", "cell-b"], ["g1"])
+    exonic = _adata([[3]], ["cell-a"], ["g1"])
+
+    with pytest.raises(ValueError, match="missing 1 of 2 filtered"):
+        build_velocity_adata_from_anndata(total, exonic)
+
+
+def test_dual_subtraction_ignores_extra_raw_cells_and_preserves_total_order():
+    total = _adata([[7], [5]], ["cell-b", "cell-a"], ["g1"])
+    exonic = _adata([[3], [2], [99]], ["cell-a", "cell-b", "background"], ["g1"])
+
+    result = build_velocity_adata_from_anndata(total, exonic)
+
+    assert result.obs_names.tolist() == ["cell-b", "cell-a"]
+    np.testing.assert_array_equal(result.layers["spliced"], [[2], [3]])
+    np.testing.assert_array_equal(result.layers["unspliced"], [[5], [2]])

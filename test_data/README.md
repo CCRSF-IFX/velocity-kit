@@ -76,7 +76,6 @@ velocity-kit prep-pipseq \
 
 ## Expected Output
 
-- The output will contain **500 cells** (union of all raw barcodes)
-- For the **200 filtered cells**: unspliced = total - exonic (positive values)
-- For the **300 background cells**: unspliced = 0 (no total counts available)
-
+- The output will contain the **200 filtered cells** from the total matrix.
+- Every filtered barcode must exist in the raw exonic matrix.
+- The additional 300 raw/background barcodes are intentionally excluded.
