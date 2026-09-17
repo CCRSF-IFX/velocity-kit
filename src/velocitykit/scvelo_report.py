@@ -1,4 +1,4 @@
-"""Generate scVelo analysis reports from loom files."""
+"""Generate scVelo analysis reports from loom or H5AD files."""
 
 from __future__ import annotations
 
@@ -19,6 +19,32 @@ import matplotlib.pyplot as plt
 # Suppress known deprecation warnings from dependencies
 warnings.filterwarnings('ignore', category=UserWarning, module='louvain')
 warnings.filterwarnings('ignore', message='pkg_resources is deprecated')
+
+
+SUPPORTED_INPUT_SUFFIXES = {".h5ad", ".loom"}
+
+
+def read_velocity_input(input_path: str):
+    """Read a supported velocity AnnData input and validate kinetic layers."""
+    path = Path(input_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"Input file not found: {input_path}")
+    if path.suffix.lower() not in SUPPORTED_INPUT_SUFFIXES:
+        supported = ", ".join(sorted(SUPPORTED_INPUT_SUFFIXES))
+        raise ValueError(
+            f"Unsupported input format {path.suffix or '<none>'!r}; expected {supported}"
+        )
+
+    adata = sc.read(path)
+    missing_layers = [
+        layer for layer in ("spliced", "unspliced") if layer not in adata.layers
+    ]
+    if missing_layers:
+        raise ValueError(
+            "Input is missing required RNA-velocity layers: "
+            f"{', '.join(missing_layers)}"
+        )
+    return adata
 
 
 def _read_cell_metadata(metadata_file: str) -> pd.DataFrame:
@@ -267,7 +293,7 @@ def calculate_input_qc_metrics(adata) -> None:
 
 
 def run_scvelo_and_generate_report(
-    loom_path: str,
+    input_path: str,
     output_dir: str,
     sample_name: Optional[str] = None,
     metadata_file: Optional[str] = None,
@@ -278,17 +304,17 @@ def run_scvelo_and_generate_report(
     subset_values: Optional[Sequence[str]] = None,
 ) -> str:
     """
-    Run a standard scVelo pipeline on a loom file and generate an HTML report
+    Run a standard scVelo pipeline on a loom or H5AD file and generate an HTML report
     with QC and analysis plots.
 
     Parameters
     ----------
-    loom_path : str
-        Path to the input .loom file.
+    input_path : str
+        Path to an input ``.loom`` or ``.h5ad`` file.
     output_dir : str
         Directory where plots and HTML report will be written.
     sample_name : str, optional
-        Name used in plot titles and report filename. If None, derived from loom_path.
+        Name used in plot titles and report filename. If None, derived from input_path.
     metadata_file : str, optional
         CSV or TSV containing cell-level annotations to attach before analysis.
     metadata_key : str, optional
@@ -313,7 +339,7 @@ def run_scvelo_and_generate_report(
     # -------------------------------------------------------------------------
     os.makedirs(output_dir, exist_ok=True)
     if sample_name is None:
-        sample_name = os.path.splitext(os.path.basename(loom_path))[0]
+        sample_name = os.path.splitext(os.path.basename(input_path))[0]
 
     # make scvelo write figures into output_dir
     scv.settings.figdir = output_dir
@@ -322,8 +348,8 @@ def run_scvelo_and_generate_report(
     # -------------------------------------------------------------------------
     # Load data
     # -------------------------------------------------------------------------
-    print(f"[{sample_name}] Reading loom file: {loom_path}")
-    adata = sc.read(loom_path)
+    print(f"[{sample_name}] Reading velocity input: {input_path}")
+    adata = read_velocity_input(input_path)
 
     color_by = list(dict.fromkeys(color_by or []))
     metadata_details = None

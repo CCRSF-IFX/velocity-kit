@@ -11,6 +11,7 @@ from velocitykit.scvelo_report import (
     _plot_filename,
     attach_cell_metadata,
     calculate_input_qc_metrics,
+    read_velocity_input,
     subset_cells,
 )
 
@@ -26,6 +27,35 @@ def _adata():
             index=["0", "1", "2"],
         ),
     )
+
+
+@pytest.mark.parametrize("suffix", [".h5ad", ".loom"])
+def test_read_velocity_input_accepts_h5ad_and_loom(tmp_path, suffix):
+    adata = _adata()
+    adata.layers["spliced"] = np.ones(adata.shape)
+    adata.layers["unspliced"] = np.zeros(adata.shape)
+    input_file = tmp_path / f"velocity{suffix}"
+    if suffix == ".h5ad":
+        adata.write_h5ad(input_file)
+    else:
+        adata.write_loom(input_file)
+
+    loaded = read_velocity_input(str(input_file))
+
+    assert loaded.shape == adata.shape
+    assert {"spliced", "unspliced"}.issubset(loaded.layers)
+
+
+def test_read_velocity_input_rejects_unsupported_or_missing_layers(tmp_path):
+    unsupported = tmp_path / "velocity.txt"
+    unsupported.write_text("not an AnnData file")
+    with pytest.raises(ValueError, match="Unsupported input format"):
+        read_velocity_input(str(unsupported))
+
+    incomplete = tmp_path / "incomplete.h5ad"
+    _adata().write_h5ad(incomplete)
+    with pytest.raises(ValueError, match="missing required RNA-velocity layers"):
+        read_velocity_input(str(incomplete))
 
 
 def test_attach_cell_metadata_infers_unique_shared_key(tmp_path):
