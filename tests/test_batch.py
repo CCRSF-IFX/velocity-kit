@@ -150,3 +150,50 @@ def test_hansen_combat_requires_multiple_nontrivial_batches():
         hansen_combat_correct(
             singleton, batch_key="batch", min_shared_counts=0, n_top_genes=0
         )
+
+
+def test_hansen_combat_supports_categorical_preserved_covariate():
+    rng = np.random.default_rng(7)
+    spliced = rng.poisson(4, size=(12, 20)).astype(float)
+    unspliced = rng.poisson(2, size=(12, 20)).astype(float)
+    adata = AnnData(
+        X=spliced + unspliced,
+        obs=pd.DataFrame(
+            {
+                "batch": ["run1"] * 6 + ["run2"] * 6,
+                "condition": ["control", "treated"] * 6,
+            },
+            index=[f"cell-{i}" for i in range(12)],
+        ),
+        var=pd.DataFrame(index=[f"gene-{i}" for i in range(20)]),
+    )
+    adata.layers["spliced"] = spliced
+    adata.layers["unspliced"] = unspliced
+
+    corrected = hansen_combat_correct(
+        adata,
+        batch_key="batch",
+        preserve_keys=["condition"],
+        min_shared_counts=0,
+        n_top_genes=0,
+    )
+
+    assert np.isfinite(corrected.X).all()
+    assert corrected.uns["velocitykit_batch_correction"][
+        "preserve_keys"
+    ].tolist() == ["condition"]
+    assert "__velocitykit_covariate_0_level_1" not in corrected.obs
+
+
+def test_hansen_combat_rejects_confounded_preserved_covariate():
+    adata = _velocity_adata()
+    adata.obs["condition"] = adata.obs["batch"].to_numpy()
+
+    with pytest.raises(ValueError, match="rank deficient"):
+        hansen_combat_correct(
+            adata,
+            batch_key="batch",
+            preserve_keys=["condition"],
+            min_shared_counts=0,
+            n_top_genes=0,
+        )

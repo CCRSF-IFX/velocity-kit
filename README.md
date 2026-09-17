@@ -308,6 +308,11 @@ the model; it cannot include the batch column. Strongly confounded batch and
 biological variables cannot be separated reliably. Use `--n-top-genes 0` to
 retain all genes, with higher memory use.
 
+Categorical preserved covariates are encoded as reference-level contrasts
+before ComBat. VelocityKit verifies that the resulting design has full rank and
+stops with a confounding error when batch and biological effects cannot be
+identified separately.
+
 The output is a canonical H5AD with normalized, corrected `spliced` and
 `unspliced` layers, `X = log1p(spliced)`, pre-correction per-cell QC metrics,
 and correction provenance. `run-scvelo` recognizes that provenance and skips a

@@ -9,6 +9,7 @@ from typing import Optional, Sequence
 
 import anndata as ad
 import numpy as np
+import pandas as pd
 import scanpy as sc
 import scipy.sparse as sp
 
@@ -136,6 +137,56 @@ def _input_qc(spliced) -> tuple[np.ndarray, np.ndarray]:
     return genes.astype(np.int64), counts.astype(np.float64)
 
 
+def _combat_design(
+    obs: pd.DataFrame,
+    batch_key: str,
+    preserve_keys: Sequence[str],
+) -> tuple[pd.DataFrame, list[str]]:
+    """Encode preserved covariates without creating a singular ComBat design."""
+    combat_obs = obs.copy()
+    encoded_keys = []
+
+    for covariate_index, key in enumerate(preserve_keys):
+        values = obs[key]
+        if values.nunique(dropna=False) < 2:
+            raise ValueError(f"Preserved covariate {key!r} must contain variation")
+
+        if pd.api.types.is_numeric_dtype(values.dtype):
+            name = f"__velocitykit_covariate_{covariate_index}"
+            combat_obs[name] = values.to_numpy(dtype=np.float64)
+            encoded_keys.append(name)
+            continue
+
+        categorical = values.astype(str)
+        levels = sorted(categorical.unique().tolist())
+        # Drop one reference level. Passing a categorical column directly to
+        # Scanpy creates all k indicator columns alongside all batch columns,
+        # making the design singular even when biology is balanced by batch.
+        for level_index, level in enumerate(levels[1:], start=1):
+            name = (
+                f"__velocitykit_covariate_{covariate_index}_level_{level_index}"
+            )
+            combat_obs[name] = (categorical == level).to_numpy(dtype=np.float64)
+            encoded_keys.append(name)
+
+    batch_design = pd.get_dummies(
+        obs[batch_key].astype(str),
+        prefix="batch",
+        dtype=np.float64,
+    )
+    covariate_design = combat_obs[encoded_keys].astype(np.float64)
+    design = np.column_stack(
+        [batch_design.to_numpy(), covariate_design.to_numpy()]
+    )
+    rank = int(np.linalg.matrix_rank(design))
+    if rank < design.shape[1]:
+        raise ValueError(
+            "ComBat design is rank deficient; preserved covariates are constant, "
+            "redundant, or confounded with the batch key"
+        )
+    return combat_obs, encoded_keys
+
+
 def hansen_combat_correct(
     adata,
     batch_key: str,
@@ -148,6 +199,9 @@ def hansen_combat_correct(
     """Correct total S+U abundance with ComBat and preserve the spliced ratio."""
     preserve_keys = list(dict.fromkeys(preserve_keys or []))
     batch_levels = _validate_design(adata, batch_key, preserve_keys)
+    combat_obs, combat_covariates = _combat_design(
+        adata.obs, batch_key, preserve_keys
+    )
     if target_sum <= 0:
         raise ValueError("target_sum must be positive")
     if min_shared_counts < 0:
@@ -205,13 +259,13 @@ def hansen_combat_correct(
     normalized_selected_total = total_raw * scale[:, None]
     combat_input = ad.AnnData(
         X=np.log1p(normalized_selected_total),
-        obs=adata.obs.copy(),
+        obs=combat_obs,
         var=adata.var.iloc[selected_genes].copy(),
     )
     sc.pp.combat(
         combat_input,
         key=batch_key,
-        covariates=preserve_keys or None,
+        covariates=combat_covariates or None,
     )
     corrected_log_total = np.asarray(combat_input.X, dtype=np.float64)
     if not np.isfinite(corrected_log_total).all():
