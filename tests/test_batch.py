@@ -28,7 +28,7 @@ def _velocity_adata():
         dtype=float,
     )
     adata = AnnData(
-        X=spliced.copy(),
+        X=spliced + unspliced,
         obs=pd.DataFrame(
             {
                 "batch": ["run1", "run1", "run2", "run2"],
@@ -87,7 +87,11 @@ def test_hansen_combat_preserves_velocity_relationship(monkeypatch):
     assert np.all(corrected_total[original_total == 0] == 0)
     np.testing.assert_allclose(corrected.X, np.log1p(corrected_spliced))
     assert corrected.obs["n_genes_by_counts"].tolist() == [3, 3, 3, 4]
-    assert corrected.obs["total_counts"].tolist() == [7, 6, 11, 10]
+    assert corrected.obs["total_counts"].tolist() == [12, 12, 18, 17]
+    assert corrected.uns["velocitykit_input_qc"] == {
+        "matrix": "X",
+        "n_genes_before_filtering": 4,
+    }
     provenance = corrected.uns["velocitykit_batch_correction"]
     assert provenance["method"] == "hansen-combat"
     assert provenance["batch_key"] == "batch"

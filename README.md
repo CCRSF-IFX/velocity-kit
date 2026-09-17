@@ -318,8 +318,10 @@ identified separately.
 
 The output is a canonical H5AD with normalized, corrected `spliced` and
 `unspliced` layers, `X = log1p(spliced)`, pre-correction per-cell QC metrics,
-and correction provenance. `run-scvelo` recognizes that provenance and skips a
-second normalization and variable-gene-selection pass.
+and correction provenance. Pre-correction QC is calculated from the original
+input `X`, matching an uncorrected `run-scvelo` report. `run-scvelo` recognizes
+the correction provenance and skips a second normalization and
+variable-gene-selection pass.
 
 ### scVelo Analysis Report
 

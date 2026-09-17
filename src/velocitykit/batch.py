@@ -128,12 +128,12 @@ def _validate_design(
     return levels
 
 
-def _input_qc(spliced) -> tuple[np.ndarray, np.ndarray]:
-    if sp.issparse(spliced):
-        genes = np.asarray((spliced > 0).sum(axis=1)).ravel()
+def _input_qc(matrix) -> tuple[np.ndarray, np.ndarray]:
+    if sp.issparse(matrix):
+        genes = np.asarray((matrix > 0).sum(axis=1)).ravel()
     else:
-        genes = np.count_nonzero(np.asarray(spliced) > 0, axis=1)
-    counts = _sum_axis(spliced, axis=1)
+        genes = np.count_nonzero(np.asarray(matrix) > 0, axis=1)
+    counts = _sum_axis(matrix, axis=1)
     return genes.astype(np.int64), counts.astype(np.float64)
 
 
@@ -211,7 +211,7 @@ def hansen_combat_correct(
 
     spliced = adata.layers["spliced"]
     unspliced = adata.layers["unspliced"]
-    input_genes_per_cell, input_counts_per_cell = _input_qc(spliced)
+    input_genes_per_cell, input_counts_per_cell = _input_qc(adata.X)
     total = spliced + unspliced
     library_size = _sum_axis(total, axis=1).astype(np.float64)
     if np.any(library_size <= 0):
@@ -312,6 +312,10 @@ def hansen_combat_correct(
             and key != "velocitykit_batch_correction"
         ):
             output.uns[key] = copy.deepcopy(value)
+    output.uns["velocitykit_input_qc"] = {
+        "matrix": "X",
+        "n_genes_before_filtering": int(adata.n_vars),
+    }
     output.uns["velocitykit_batch_correction"] = {
         "method": "hansen-combat",
         "batch_key": batch_key,
