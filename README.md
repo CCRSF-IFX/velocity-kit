@@ -266,7 +266,25 @@ Generate a comprehensive HTML report with QC plots, velocity analysis, and visua
 
 - `-o, --output-dir`: Output directory for plots and HTML report (default: `scvelo_analysis`)
 - `-n, --sample-name`: Sample name for report title (default: derived from loom filename)
+- `--metadata-file`: Optional cell metadata CSV or TSV
+- `--metadata-key`: Unique cell identifier column in the metadata file
+- `--adata-key`: Matching column in the loom observations; use `_index` for observation names
+- `--color-by COLUMN [COLUMN ...]`: Generate additional UMAPs colored by selected annotation columns
+- `--subset-by COLUMN`: Observation/metadata column used to select cells before preprocessing
+- `--subset-values VALUE [VALUE ...]`: One or more values retained from `--subset-by`
 - `-v, --verbose`: Increase verbosity level (use `-v` for info, `-vv` for debug)
+
+External metadata are joined before the expensive scVelo calculation. Every
+input cell must have exactly one matching metadata row. Duplicate identifiers,
+missing cells, ambiguous automatic keys, and conflicts with existing loom
+annotations stop the run with an error. Extra metadata rows are allowed and
+reported. If the identifier column has the same name in both inputs,
+`--adata-key` can be omitted.
+
+Cell subsetting is applied after external metadata validation and before
+normalization, variable-gene selection, neighborhood construction, or velocity
+estimation. `--subset-by` and `--subset-values` must be supplied together, and
+every requested value must exist.
 
 #### Requirements
 
@@ -287,6 +305,30 @@ velocity-kit run-scvelo velocity.loom \
   -n Sample1 \
   -v
 
+# Attach external metadata and add sample/cell-type UMAPs to the report
+velocity-kit run-scvelo velocity.loom \
+  -o reports/sample1 \
+  --metadata-file cell_metadata.csv \
+  --metadata-key barcode \
+  --color-by sample cell_type
+
+# Analyze only Cb_E6 cells
+velocity-kit run-scvelo velocity.loom \
+  -o reports/Cb_E6 \
+  --metadata-file cell_metadata.csv \
+  --metadata-key bc_wells \
+  --adata-key bc_wells \
+  --subset-by sample \
+  --subset-values Cb_E6 \
+  --color-by sample
+
+# Analyze the union of multiple samples
+velocity-kit run-scvelo velocity.loom \
+  -o reports/Cb_E6_E7 \
+  --subset-by sample \
+  --subset-values Cb_E6 Cb_E7 \
+  --color-by sample
+
 # Use default output directory and auto-detect sample name
 velocity-kit run-scvelo velocity.loom
 ```
@@ -296,6 +338,7 @@ velocity-kit run-scvelo velocity.loom
 The report includes:
 - **QC plots**: Total counts, gene counts, spliced/unspliced proportions
 - **Velocity embeddings**: UMAP with velocity arrows and stream plots
+- **Metadata embeddings**: One UMAP for each requested `--color-by` column
 - **Clustering**: Leiden community detection (resolution=0.1)
 - **Top velocity genes**: Ranked genes driving velocity patterns
 - **HTML report**: All plots combined in an interactive HTML file

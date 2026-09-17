@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import os
+import re
 import warnings
 from datetime import datetime
-from typing import Optional
+from html import escape
+from pathlib import Path
+from typing import Any, Dict, Optional, Sequence, Tuple
 
+import numpy as np
 import pandas as pd
 import scanpy as sc
 import scvelo as scv
@@ -16,10 +20,252 @@ import matplotlib.pyplot as plt
 warnings.filterwarnings('ignore', category=UserWarning, module='louvain')
 warnings.filterwarnings('ignore', message='pkg_resources is deprecated')
 
+
+def _read_cell_metadata(metadata_file: str) -> pd.DataFrame:
+    """Read comma- or tab-delimited cell metadata."""
+    path = Path(metadata_file)
+    if not path.is_file():
+        raise FileNotFoundError(f"Metadata file not found: {metadata_file}")
+
+    separator = "\t" if path.suffix.lower() in {".tsv", ".tab", ".txt"} else ","
+    metadata = pd.read_csv(path, sep=separator)
+    if metadata.empty:
+        raise ValueError(f"Metadata file contains no rows: {metadata_file}")
+    return metadata
+
+
+def _values_match(left: pd.Series, right: pd.Series) -> bool:
+    """Return whether two aligned metadata columns agree on non-missing values."""
+    compared = left.notna() & right.notna()
+    if not compared.any():
+        return True
+
+    left_values = left[compared]
+    right_values = right[compared]
+    if pd.api.types.is_numeric_dtype(left_values) and pd.api.types.is_numeric_dtype(
+        right_values
+    ):
+        return bool(
+            np.allclose(
+                left_values.to_numpy(dtype=float),
+                right_values.to_numpy(dtype=float),
+                equal_nan=True,
+            )
+        )
+    return bool(
+        np.array_equal(
+            left_values.astype(str).to_numpy(), right_values.astype(str).to_numpy()
+        )
+    )
+
+
+def _adata_key_values(adata, key: str) -> pd.Series:
+    """Get a cell identifier from ``adata.obs`` or its index."""
+    if key == "_index":
+        return pd.Series(adata.obs_names.astype(str), index=adata.obs_names)
+    if key not in adata.obs:
+        raise ValueError(
+            f"AnnData cell key {key!r} was not found in adata.obs. "
+            "Use '_index' to join against adata.obs_names."
+        )
+    values = adata.obs[key]
+    if values.isna().any():
+        raise ValueError(f"AnnData cell key {key!r} contains missing values")
+    return pd.Series(values.astype(str).to_numpy(), index=adata.obs_names)
+
+
+def _resolve_metadata_keys(
+    adata,
+    metadata: pd.DataFrame,
+    metadata_key: Optional[str],
+    adata_key: Optional[str],
+) -> Tuple[str, str]:
+    """Resolve a unique metadata-to-AnnData cell identifier mapping."""
+    if adata_key is not None and metadata_key is None:
+        if adata_key == "_index":
+            raise ValueError("--metadata-key is required with --adata-key _index")
+        metadata_key = adata_key
+
+    if metadata_key is not None:
+        if metadata_key not in metadata:
+            raise ValueError(
+                f"Metadata key {metadata_key!r} was not found. Available columns: "
+                f"{', '.join(map(str, metadata.columns))}"
+            )
+        if adata_key is None:
+            if metadata_key in adata.obs:
+                adata_key = metadata_key
+            else:
+                metadata_values = set(metadata[metadata_key].dropna().astype(str))
+                if set(adata.obs_names.astype(str)).issubset(metadata_values):
+                    adata_key = "_index"
+                else:
+                    raise ValueError(
+                        f"Could not match metadata key {metadata_key!r} to adata.obs. "
+                        "Provide --adata-key explicitly."
+                    )
+        return metadata_key, adata_key
+
+    candidates = []
+    for column in metadata.columns:
+        if column not in adata.obs:
+            continue
+        metadata_values = metadata[column]
+        adata_values = adata.obs[column]
+        if (
+            metadata_values.notna().all()
+            and adata_values.notna().all()
+            and metadata_values.astype(str).is_unique
+            and adata_values.astype(str).is_unique
+            and set(adata_values.astype(str)).issubset(
+                set(metadata_values.astype(str))
+            )
+        ):
+            candidates.append((str(column), str(column)))
+
+    for column in metadata.columns:
+        metadata_values = metadata[column]
+        if (
+            metadata_values.notna().all()
+            and metadata_values.astype(str).is_unique
+            and set(adata.obs_names.astype(str)).issubset(
+                set(metadata_values.astype(str))
+            )
+        ):
+            candidates.append((str(column), "_index"))
+
+    candidates = list(dict.fromkeys(candidates))
+    if len(candidates) != 1:
+        candidate_text = ", ".join(f"{m}:{a}" for m, a in candidates) or "none"
+        raise ValueError(
+            "Could not infer one unique metadata join. Provide --metadata-key and "
+            f"--adata-key explicitly. Candidate mappings: {candidate_text}"
+        )
+    return candidates[0]
+
+
+def attach_cell_metadata(
+    adata,
+    metadata_file: str,
+    metadata_key: Optional[str] = None,
+    adata_key: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Attach external cell metadata after a validated one-to-one join."""
+    metadata = _read_cell_metadata(metadata_file)
+    metadata_key, adata_key = _resolve_metadata_keys(
+        adata, metadata, metadata_key, adata_key
+    )
+
+    metadata_ids = metadata[metadata_key]
+    if metadata_ids.isna().any():
+        raise ValueError(f"Metadata key {metadata_key!r} contains missing values")
+    metadata_ids = metadata_ids.astype(str)
+    if not metadata_ids.is_unique:
+        examples = metadata_ids[metadata_ids.duplicated(keep=False)].unique()[:5]
+        raise ValueError(
+            f"Metadata key {metadata_key!r} contains duplicate cell identifiers: "
+            f"{', '.join(examples)}"
+        )
+
+    adata_ids = _adata_key_values(adata, adata_key)
+    if adata_ids.isna().any() or not adata_ids.is_unique:
+        raise ValueError(f"AnnData cell key {adata_key!r} must be complete and unique")
+
+    indexed_metadata = metadata.copy()
+    indexed_metadata.index = metadata_ids
+    missing = adata_ids[~adata_ids.isin(indexed_metadata.index)]
+    if len(missing):
+        raise ValueError(
+            f"Metadata is missing {len(missing):,} of {adata.n_obs:,} cells; "
+            f"examples: {', '.join(missing.iloc[:5])}"
+        )
+
+    aligned = indexed_metadata.loc[adata_ids.to_numpy()].copy()
+    aligned.index = adata.obs_names
+    for column in metadata.columns:
+        if column == metadata_key:
+            continue
+        incoming = aligned[column]
+        if column in adata.obs and not _values_match(adata.obs[column], incoming):
+            raise ValueError(
+                f"External metadata column {column!r} conflicts with existing "
+                "adata.obs values after joining cells"
+            )
+        if pd.api.types.is_object_dtype(incoming) or isinstance(
+            incoming.dtype, pd.StringDtype
+        ):
+            adata.obs[column] = pd.Categorical(
+                incoming, categories=pd.unique(incoming.dropna()), ordered=False
+            )
+        else:
+            adata.obs[column] = incoming.to_numpy()
+
+    details = {
+        "file": str(metadata_file),
+        "metadata_key": metadata_key,
+        "adata_key": adata_key,
+        "matched_cells": int(adata.n_obs),
+        "extra_metadata_rows": int(len(metadata) - adata.n_obs),
+        "columns": [str(column) for column in metadata.columns if column != metadata_key],
+    }
+    adata.uns["velocitykit_external_metadata"] = details
+    return details
+
+
+def _plot_filename(column: str) -> str:
+    """Create a safe, stable UMAP filename from an annotation name."""
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "_", column).strip("._") or "annotation"
+    return f"umap_{slug}.png"
+
+
+def subset_cells(
+    adata,
+    subset_by: str,
+    subset_values: Sequence[str],
+) -> Tuple[Any, Dict[str, Any]]:
+    """Return cells matching selected observation values and selection details."""
+    if subset_by not in adata.obs:
+        raise ValueError(
+            f"Subset column {subset_by!r} was not found after metadata loading. "
+            f"Available columns: {', '.join(map(str, adata.obs.columns))}"
+        )
+
+    requested = list(dict.fromkeys(str(value) for value in subset_values))
+    if not requested:
+        raise ValueError("At least one --subset-values entry is required")
+
+    observed = adata.obs[subset_by]
+    available = set(observed.dropna().astype(str))
+    missing = [value for value in requested if value not in available]
+    if missing:
+        available_text = ", ".join(sorted(available))
+        raise ValueError(
+            f"Requested values were not found in {subset_by!r}: {', '.join(missing)}. "
+            f"Available values: {available_text}"
+        )
+
+    mask = observed.astype(str).isin(requested).to_numpy()
+    original_cells = int(adata.n_obs)
+    selected = adata[mask].copy()
+    details = {
+        "column": str(subset_by),
+        "values": requested,
+        "original_cells": original_cells,
+        "retained_cells": int(selected.n_obs),
+    }
+    selected.uns["velocitykit_cell_subset"] = details
+    return selected, details
+
 def run_scvelo_and_generate_report(
     loom_path: str,
     output_dir: str,
     sample_name: Optional[str] = None,
+    metadata_file: Optional[str] = None,
+    metadata_key: Optional[str] = None,
+    adata_key: Optional[str] = None,
+    color_by: Optional[Sequence[str]] = None,
+    subset_by: Optional[str] = None,
+    subset_values: Optional[Sequence[str]] = None,
 ) -> str:
     """
     Run a standard scVelo pipeline on a loom file and generate an HTML report
@@ -33,6 +279,18 @@ def run_scvelo_and_generate_report(
         Directory where plots and HTML report will be written.
     sample_name : str, optional
         Name used in plot titles and report filename. If None, derived from loom_path.
+    metadata_file : str, optional
+        CSV or TSV containing cell-level annotations to attach before analysis.
+    metadata_key : str, optional
+        Unique cell identifier column in the external metadata.
+    adata_key : str, optional
+        Matching identifier in ``adata.obs``. Use ``_index`` for ``obs_names``.
+    color_by : sequence of str, optional
+        Annotation columns for additional UMAP plots.
+    subset_by : str, optional
+        Observation or metadata column used to select cells before preprocessing.
+    subset_values : sequence of str, optional
+        Values retained from ``subset_by``.
 
     Returns
     -------
@@ -56,6 +314,44 @@ def run_scvelo_and_generate_report(
     # -------------------------------------------------------------------------
     print(f"[{sample_name}] Reading loom file: {loom_path}")
     adata = sc.read(loom_path)
+
+    color_by = list(dict.fromkeys(color_by or []))
+    metadata_details = None
+    if metadata_file is not None:
+        print(f"[{sample_name}] Attaching cell metadata: {metadata_file}")
+        metadata_details = attach_cell_metadata(
+            adata,
+            metadata_file=metadata_file,
+            metadata_key=metadata_key,
+            adata_key=adata_key,
+        )
+        print(
+            f"[{sample_name}] Matched {metadata_details['matched_cells']} cells "
+            f"using {metadata_details['metadata_key']} -> "
+            f"{metadata_details['adata_key']}"
+        )
+
+    subset_details = None
+    if subset_by is not None:
+        adata, subset_details = subset_cells(
+            adata,
+            subset_by=subset_by,
+            subset_values=subset_values or [],
+        )
+        print(
+            f"[{sample_name}] Retained {subset_details['retained_cells']} of "
+            f"{subset_details['original_cells']} cells where "
+            f"{subset_details['column']} is one of "
+            f"{', '.join(subset_details['values'])}"
+        )
+
+    missing_colors = [column for column in color_by if column not in adata.obs]
+    if missing_colors:
+        raise ValueError(
+            "Requested --color-by columns were not found after metadata loading: "
+            f"{', '.join(missing_colors)}. Available columns: "
+            f"{', '.join(map(str, adata.obs.columns))}"
+        )
     
     # Fix categorical columns that may cause issues with newer pandas
     # Convert any categorical columns to regular strings to avoid
@@ -247,6 +543,19 @@ def run_scvelo_and_generate_report(
     )
     save_current_fig("velocity_stream_umap.png")
 
+    # Additional UMAPs colored by user-selected cell metadata.
+    for column in color_by:
+        print(f"[{sample_name}] Plotting UMAP colored by {column}")
+        sc.pl.umap(
+            adata,
+            color=column,
+            title=f"UMAP colored by {column}",
+            show=False,
+        )
+        filename = _plot_filename(column)
+        generated_plots.append((filename, f"UMAP colored by {column}"))
+        save_current_fig(filename)
+
     # -------------------------------------------------------------------------
     # Clustering (Leiden) - useful for grouping cells
     # -------------------------------------------------------------------------
@@ -310,10 +619,41 @@ def run_scvelo_and_generate_report(
         "<h2>QC and Velocity Analysis</h2>",
     ]
 
+    if metadata_details is not None:
+        html_parts.extend(
+            [
+                "<h2>External cell metadata</h2>",
+                "<ul>",
+                f"<li>File: {escape(metadata_details['file'])}</li>",
+                f"<li>Join: {escape(metadata_details['metadata_key'])} &rarr; "
+                f"{escape(metadata_details['adata_key'])}</li>",
+                f"<li>Matched cells: {metadata_details['matched_cells']:,}</li>",
+                f"<li>Additional metadata rows ignored: "
+                f"{metadata_details['extra_metadata_rows']:,}</li>",
+                "</ul>",
+            ]
+        )
+
+    if subset_details is not None:
+        html_parts.extend(
+            [
+                "<h2>Cell subset</h2>",
+                "<ul>",
+                f"<li>Column: {escape(subset_details['column'])}</li>",
+                f"<li>Values: "
+                f"{escape(', '.join(subset_details['values']))}</li>",
+                f"<li>Retained cells: {subset_details['retained_cells']:,} of "
+                f"{subset_details['original_cells']:,}</li>",
+                "</ul>",
+            ]
+        )
+
     for filename, title in generated_plots:
         html_parts.append('<div class="plot-block">')
-        html_parts.append(f"<h3>{title}</h3>")
-        html_parts.append(f'<img src="{filename}" alt="{title}">')
+        html_parts.append(f"<h3>{escape(title)}</h3>")
+        html_parts.append(
+            f'<img src="{escape(filename)}" alt="{escape(title)}">'
+        )
         html_parts.append("</div>")
 
     html_parts.extend(["</body>", "</html>"])

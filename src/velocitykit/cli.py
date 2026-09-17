@@ -151,6 +151,59 @@ def main():
         help="Sample name for report title (default: derived from loom filename)"
     )
     scvelo_parser.add_argument(
+        "--metadata-file",
+        default=None,
+        help=(
+            "Optional cell metadata CSV or TSV. Every input cell must match one "
+            "unique metadata row."
+        ),
+    )
+    scvelo_parser.add_argument(
+        "--metadata-key",
+        default=None,
+        help=(
+            "Unique cell identifier column in --metadata-file. If omitted, "
+            "velocity-kit requires one unambiguous shared identifier column."
+        ),
+    )
+    scvelo_parser.add_argument(
+        "--adata-key",
+        default=None,
+        help=(
+            "Matching cell identifier column in the input AnnData observations. "
+            "Use '_index' to match AnnData observation names."
+        ),
+    )
+    scvelo_parser.add_argument(
+        "--color-by",
+        nargs="+",
+        default=None,
+        metavar="COLUMN",
+        help=(
+            "One or more observation/metadata columns used to create additional "
+            "UMAP plots (for example: --color-by sample cell_type)."
+        ),
+    )
+    scvelo_parser.add_argument(
+        "--subset-by",
+        default=None,
+        metavar="COLUMN",
+        help=(
+            "Observation/metadata column used to subset cells before scVelo "
+            "preprocessing (for example: --subset-by sample)."
+        ),
+    )
+    scvelo_parser.add_argument(
+        "--subset-values",
+        nargs="+",
+        default=None,
+        metavar="VALUE",
+        help=(
+            "One or more values retained from --subset-by "
+            "(for example: --subset-values Cb_E6)."
+        ),
+    )
+    scvelo_parser.add_argument(
         "-v", "--verbose",
         action="count",
         default=1,
@@ -204,6 +257,18 @@ def run_scvelo(args):
         logger.error(f"Input loom file not found: {args.loom_path}")
         sys.exit(1)
 
+    if (args.metadata_key or args.adata_key) and not args.metadata_file:
+        logger.error("--metadata-key and --adata-key require --metadata-file")
+        sys.exit(1)
+
+    if args.metadata_file and not os.path.isfile(args.metadata_file):
+        logger.error(f"Metadata file not found: {args.metadata_file}")
+        sys.exit(1)
+
+    if bool(args.subset_by) != bool(args.subset_values):
+        logger.error("--subset-by and --subset-values must be provided together")
+        sys.exit(1)
+
     # Check if file is a .loom file
     if not args.loom_path.endswith(".loom"):
         logger.warning(
@@ -218,6 +283,12 @@ def run_scvelo(args):
             loom_path=args.loom_path,
             output_dir=args.output_dir,
             sample_name=args.sample_name,
+            metadata_file=args.metadata_file,
+            metadata_key=args.metadata_key,
+            adata_key=args.adata_key,
+            color_by=args.color_by,
+            subset_by=args.subset_by,
+            subset_values=args.subset_values,
         )
         logger.info(f"✓ Analysis report successfully generated: {report_path}")
     except Exception as e:
