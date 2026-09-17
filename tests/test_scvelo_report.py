@@ -7,7 +7,7 @@ pytest.importorskip("scvelo")
 
 from anndata import AnnData, read_h5ad
 
-from velocitykit.io import read_velocity_input
+from velocitykit.io import read_velocity_input, validate_velocity_adata
 from velocitykit.scvelo_report import (
     _analysis_parameters,
     _group_anndata_output,
@@ -60,6 +60,31 @@ def test_read_velocity_input_rejects_unsupported_or_missing_layers(tmp_path):
     _adata().write_h5ad(incomplete)
     with pytest.raises(ValueError, match="missing required RNA-velocity layers"):
         read_velocity_input(str(incomplete))
+
+
+@pytest.mark.parametrize(
+    "mutation,message",
+    [
+        (lambda adata: setattr(adata, "obs_names", ["cell", "cell", "other"]),
+         "duplicate cell identifiers"),
+        (lambda adata: setattr(adata, "var_names", ["gene", "gene"]),
+         "duplicate gene identifiers"),
+        (lambda adata: adata.layers["spliced"].__setitem__((0, 0), -1),
+         "negative abundance"),
+        (lambda adata: adata.layers["unspliced"].__setitem__((0, 0), np.nan),
+         "non-finite abundance"),
+    ],
+)
+def test_validate_velocity_adata_rejects_invalid_identity_or_values(
+    mutation, message
+):
+    adata = _adata()
+    adata.layers["spliced"] = np.ones(adata.shape)
+    adata.layers["unspliced"] = np.zeros(adata.shape)
+    mutation(adata)
+
+    with pytest.raises(ValueError, match=message):
+        validate_velocity_adata(adata)
 
 
 def test_attach_cell_metadata_infers_unique_shared_key(tmp_path):

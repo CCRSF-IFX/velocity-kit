@@ -13,7 +13,7 @@ import pandas as pd
 import scanpy as sc
 import scipy.sparse as sp
 
-from .io import read_velocity_input
+from .io import read_velocity_input, validate_raw_velocity_counts
 
 logger = logging.getLogger(__name__)
 
@@ -189,6 +189,7 @@ def hansen_combat_correct(
     n_top_genes: Optional[int] = 2000,
 ):
     """Correct total S+U abundance with ComBat and preserve the spliced ratio."""
+    validate_raw_velocity_counts(adata)
     preserve_keys = list(dict.fromkeys(preserve_keys or []))
     batch_levels = _validate_design(adata, batch_key, preserve_keys)
     combat_obs, combat_covariates = _combat_design(

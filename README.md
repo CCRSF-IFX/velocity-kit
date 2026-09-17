@@ -320,6 +320,11 @@ Entries with zero original `S + U` remain structural zeros. Their spliced
 fraction is undefined, so VelocityKit never assigns ComBat-created abundance to
 either kinetic layer at those positions.
 
+Batch correction accepts only unnormalized, integer-like count matrices and
+refuses inputs carrying prior VelocityKit correction provenance or downstream
+scVelo analysis artifacts. This prevents accidentally correcting an already
+normalized or corrected dataset a second time.
+
 The output is a canonical H5AD with normalized, corrected `spliced` and
 `unspliced` layers, `X = log1p(spliced)`, pre-correction per-cell QC metrics,
 and correction provenance. Pre-correction QC is calculated from the original

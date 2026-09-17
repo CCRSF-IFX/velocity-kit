@@ -220,3 +220,32 @@ def test_hansen_combat_rejects_confounded_preserved_covariate():
             min_shared_counts=0,
             n_top_genes=0,
         )
+
+
+def test_hansen_combat_refuses_already_corrected_input():
+    adata = _velocity_adata()
+    adata.uns["velocitykit_batch_correction"] = {"method": "hansen-combat"}
+
+    with pytest.raises(ValueError, match="refusing to correct it a second time"):
+        hansen_combat_correct(
+            adata, batch_key="batch", min_shared_counts=0, n_top_genes=0
+        )
+
+
+@pytest.mark.parametrize(
+    "mutation,message",
+    [
+        (lambda adata: adata.layers["spliced"].__setitem__((0, 0), 4.5),
+         "not an integer-like raw count matrix"),
+        (lambda adata: adata.layers.__setitem__("velocity", adata.X.copy()),
+         "appears to be analyzed"),
+    ],
+)
+def test_hansen_combat_requires_unprocessed_raw_counts(mutation, message):
+    adata = _velocity_adata()
+    mutation(adata)
+
+    with pytest.raises(ValueError, match=message):
+        hansen_combat_correct(
+            adata, batch_key="batch", min_shared_counts=0, n_top_genes=0
+        )
