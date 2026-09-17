@@ -268,6 +268,16 @@ def calculate_input_qc_metrics(adata) -> None:
     }
 
 
+def write_analyzed_adata(adata, output_path: str) -> str:
+    """Write a fully analyzed AnnData object to an H5AD path."""
+    path = Path(output_path)
+    if path.suffix.lower() != ".h5ad":
+        raise ValueError("Analyzed AnnData output must use the .h5ad extension")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    adata.write_h5ad(path)
+    return str(path)
+
+
 def run_scvelo_and_generate_report(
     input_path: str,
     output_dir: str,
@@ -278,6 +288,7 @@ def run_scvelo_and_generate_report(
     color_by: Optional[Sequence[str]] = None,
     subset_by: Optional[str] = None,
     subset_values: Optional[Sequence[str]] = None,
+    save_anndata: Optional[str] = None,
 ) -> str:
     """
     Run a standard scVelo pipeline on a loom or H5AD file and generate an HTML report
@@ -303,6 +314,8 @@ def run_scvelo_and_generate_report(
         Observation or metadata column used to select cells before preprocessing.
     subset_values : sequence of str, optional
         Values retained from ``subset_by``.
+    save_anndata : str, optional
+        Output path for the fully analyzed AnnData object.
 
     Returns
     -------
@@ -583,6 +596,11 @@ def run_scvelo_and_generate_report(
     )
     save_current_fig("umap_leiden_clusters.png")
 
+    analyzed_path = None
+    if save_anndata is not None:
+        print(f"[{sample_name}] Saving analyzed AnnData: {save_anndata}")
+        analyzed_path = write_analyzed_adata(adata, save_anndata)
+
     # -------------------------------------------------------------------------
     # Top velocity genes heatmap (optional but useful)
     # -------------------------------------------------------------------------
@@ -658,6 +676,16 @@ def run_scvelo_and_generate_report(
                 f"{escape(', '.join(subset_details['values']))}</li>",
                 f"<li>Retained cells: {subset_details['retained_cells']:,} of "
                 f"{subset_details['original_cells']:,}</li>",
+                "</ul>",
+            ]
+        )
+
+    if analyzed_path is not None:
+        html_parts.extend(
+            [
+                "<h2>Analysis artifacts</h2>",
+                "<ul>",
+                f"<li>Analyzed AnnData: {escape(analyzed_path)}</li>",
                 "</ul>",
             ]
         )

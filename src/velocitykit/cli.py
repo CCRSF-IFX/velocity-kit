@@ -218,6 +218,15 @@ def main():
         ),
     )
     scvelo_parser.add_argument(
+        "--save-anndata",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Optional .h5ad path for the fully analyzed AnnData, including "
+            "velocity layers, graphs, embeddings, clusters, and metadata."
+        ),
+    )
+    scvelo_parser.add_argument(
         "-v", "--verbose",
         action="count",
         default=1,
@@ -285,6 +294,10 @@ def run_scvelo(args):
         logger.error("--subset-by and --subset-values must be provided together")
         sys.exit(1)
 
+    if args.save_anndata and not args.save_anndata.lower().endswith(".h5ad"):
+        logger.error("--save-anndata must use the .h5ad extension")
+        sys.exit(1)
+
     input_suffix = os.path.splitext(args.input_path)[1].lower()
     if input_suffix not in {".loom", ".h5ad"}:
         logger.error(
@@ -307,6 +320,7 @@ def run_scvelo(args):
             color_by=args.color_by,
             subset_by=args.subset_by,
             subset_values=args.subset_values,
+            save_anndata=args.save_anndata,
         )
         logger.info(f"✓ Analysis report successfully generated: {report_path}")
     except Exception as e:

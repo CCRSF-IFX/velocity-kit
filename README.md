@@ -299,6 +299,7 @@ Generate a comprehensive HTML report with QC plots, velocity analysis, and visua
 - `--color-by COLUMN [COLUMN ...]`: Generate additional UMAPs colored by selected annotation columns
 - `--subset-by COLUMN`: Observation/metadata column used to select cells before preprocessing
 - `--subset-values VALUE [VALUE ...]`: One or more values retained from `--subset-by`
+- `--save-anndata PATH`: Save the fully analyzed AnnData to an `.h5ad` file
 - `-v, --verbose`: Increase verbosity level (use `-v` for info, `-vv` for debug)
 
 External metadata are joined before the expensive scVelo calculation. Every
@@ -354,7 +355,8 @@ velocity-kit run-scvelo velocity.loom \
   -o reports/Cb_E6_E7 \
   --subset-by sample \
   --subset-values Cb_E6 Cb_E7 \
-  --color-by sample
+  --color-by sample \
+  --save-anndata reports/Cb_E6_E7/analyzed.h5ad
 
 # Use default output directory and auto-detect sample name
 velocity-kit run-scvelo velocity.loom
@@ -368,6 +370,7 @@ The report includes:
 - **Velocity embeddings**: UMAP with velocity arrows and stream plots
 - **Metadata embeddings**: One UMAP for each requested `--color-by` column
 - **Clustering**: Leiden community detection (resolution=0.1)
+- **Analyzed AnnData**: Optional H5AD containing velocity layers, graphs, embeddings, clusters, and metadata
 - **Top velocity genes**: Ranked genes driving velocity patterns
 - **HTML report**: All plots combined in an interactive HTML file
 

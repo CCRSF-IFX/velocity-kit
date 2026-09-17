@@ -5,7 +5,7 @@ import pytest
 pytest.importorskip("scanpy")
 pytest.importorskip("scvelo")
 
-from anndata import AnnData
+from anndata import AnnData, read_h5ad
 
 from velocitykit.io import read_velocity_input
 from velocitykit.scvelo_report import (
@@ -13,6 +13,7 @@ from velocitykit.scvelo_report import (
     attach_cell_metadata,
     calculate_input_qc_metrics,
     subset_cells,
+    write_analyzed_adata,
 )
 
 
@@ -196,3 +197,26 @@ def test_input_qc_metrics_are_calculated_before_gene_filtering():
         "matrix": "X",
         "n_genes_before_filtering": 4,
     }
+
+
+def test_write_analyzed_adata_preserves_analysis_fields(tmp_path):
+    adata = _adata()
+    adata.layers["spliced"] = np.ones(adata.shape)
+    adata.layers["unspliced"] = np.zeros(adata.shape)
+    adata.layers["velocity"] = np.full(adata.shape, 2.0)
+    adata.obsm["X_umap"] = np.arange(adata.n_obs * 2).reshape(adata.n_obs, 2)
+    adata.obs["leiden"] = pd.Categorical(["0", "0", "1"])
+    adata.uns["velocitykit_test"] = {"complete": True}
+    output = tmp_path / "nested" / "analyzed.h5ad"
+
+    returned = write_analyzed_adata(adata, str(output))
+    loaded = read_h5ad(output)
+
+    assert returned == str(output)
+    assert {"spliced", "unspliced", "velocity"}.issubset(loaded.layers)
+    assert "X_umap" in loaded.obsm
+    assert loaded.obs["leiden"].tolist() == ["0", "0", "1"]
+    assert bool(loaded.uns["velocitykit_test"]["complete"])
+
+    with pytest.raises(ValueError, match="must use the .h5ad extension"):
+        write_analyzed_adata(adata, str(tmp_path / "analyzed.loom"))
