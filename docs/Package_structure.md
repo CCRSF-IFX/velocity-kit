@@ -88,7 +88,7 @@ At least one output format must be specified.
 - Avoids invalid BAM-based approaches
 
 ### 2. Matrix Alignment
-- Automatically aligns matrices to union of genes and barcodes
+- Requires matching gene identifiers and aligns their order explicitly
 - Handles mismatches between total and exonic runs
 - Warns about suspicious barcode overlaps
 

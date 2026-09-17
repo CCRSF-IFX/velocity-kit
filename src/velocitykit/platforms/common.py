@@ -41,7 +41,7 @@ def run_dual_subtraction(
     This implementation:
     1. Loads both matrices using scanpy's battle-tested read_10x_mtx()
     2. Subsets exonic matrix to match filtered cells from total matrix
-    3. Aligns genes across both matrices (union of genes)
+    3. Validates that both matrices contain the same genes and aligns their order
     4. Computes unspliced = total - exonic
     5. Creates AnnData with spliced/unspliced layers
     
@@ -258,8 +258,8 @@ def build_velocity_adata_from_anndata(
     Strategy:
     1. Use cell barcodes from total matrix (filtered cells)
     2. Subset exonic matrix to only include these filtered cells
-    3. Take union of genes from both matrices
-    4. Align both matrices to this gene union
+    3. Require the same unique gene identifiers in both matrices
+    4. Align the exonic matrix to the total matrix's gene order
     5. Compute: unspliced = total - exonic, spliced = exonic
     
     Parameters
@@ -277,7 +277,7 @@ def build_velocity_adata_from_anndata(
         - layers['spliced']: same as X
         - layers['unspliced']: total - exonic (intronic)
         - obs: from total matrix
-        - var: union of genes
+        - var: genes from the total matrix in their original order
     """
     # Step 1: Get filtered cell barcodes from total matrix
     barcodes_filtered = adata_total.obs_names
@@ -316,24 +316,39 @@ def build_velocity_adata_from_anndata(
     adata_total = adata_total[common_cells, :].copy()
     adata_exonic = adata_exonic[common_cells, :].copy()
     
-    # Step 4: Gene alignment - take union of genes
-    genes_total = set(adata_total.var_names)
-    genes_exonic = set(adata_exonic.var_names)
-    genes_union = sorted(genes_total | genes_exonic)
-    genes_common = genes_total & genes_exonic
+    # Step 4: Require one unambiguous, identical feature set. Filling absent
+    # genes with zero would manufacture spliced counts that were never present
+    # in the total matrix, so mismatches are fatal.
+    if not adata_total.var_names.is_unique:
+        raise ValueError("Total matrix contains duplicate gene identifiers")
+    if not adata_exonic.var_names.is_unique:
+        raise ValueError("Exonic matrix contains duplicate gene identifiers")
+
+    genes_total = list(adata_total.var_names.astype(str))
+    genes_exonic = list(adata_exonic.var_names.astype(str))
+    total_set = set(genes_total)
+    exonic_set = set(genes_exonic)
+    if total_set != exonic_set:
+        missing = sorted(total_set - exonic_set)
+        extra = sorted(exonic_set - total_set)
+        raise ValueError(
+            "Total and exonic matrices must contain exactly the same gene "
+            f"identifiers ({len(missing)} missing from exonic, "
+            f"{len(extra)} absent from total). Examples: "
+            f"missing={missing[:5]}, extra={extra[:5]}"
+        )
     
     logger.info(
         f"Gene statistics:\n"
         f"  Total matrix:  {len(genes_total)} genes\n"
         f"  Exonic matrix: {len(genes_exonic)} genes\n"
-        f"  Common genes:  {len(genes_common)} genes\n"
-        f"  Union (final): {len(genes_union)} genes"
+        f"  Final aligned: {len(genes_total)} genes"
     )
-    
-    # Step 5: Reindex both matrices to gene union
-    logger.info("Aligning genes to union...")
-    adata_total_aligned = _reindex_genes(adata_total, genes_union)
-    adata_exonic_aligned = _reindex_genes(adata_exonic, genes_union)
+
+    # Step 5: Preserve the total matrix's order and reorder exonic genes to it.
+    logger.info("Aligning exonic genes to the total matrix order...")
+    adata_total_aligned = adata_total[:, genes_total].copy()
+    adata_exonic_aligned = adata_exonic[:, genes_total].copy()
     
     # Step 6: Compute unspliced = total - exonic
     logger.info("Computing unspliced counts (total - exonic)...")
@@ -359,7 +374,7 @@ def build_velocity_adata_from_anndata(
     adata = ad.AnnData(
         X=adata_exonic_aligned.X.copy(),  # Main matrix = spliced (exonic)
         obs=adata_total.obs.copy(),
-        var=pd.DataFrame(index=genes_union)
+        var=adata_total_aligned.var.copy(),
     )
     
     adata.layers['spliced'] = adata_exonic_aligned.X.copy()
@@ -399,63 +414,12 @@ def build_velocity_adata_from_anndata(
         'overlap_pct': overlap_pct,
         'n_genes_total': len(genes_total),
         'n_genes_exonic': len(genes_exonic),
-        'n_genes_union': len(genes_union),
+        'n_genes_final': len(genes_total),
+        'gene_join': 'exact',
         'n_negative_clipped': int(n_negative)
     }
     
     return adata
-
-
-def _reindex_genes(adata: ad.AnnData, genes_union: list) -> ad.AnnData:
-    """
-    Reindex AnnData to have all genes in genes_union.
-    
-    Missing genes are filled with zeros. This is memory-efficient using
-    sparse matrices.
-    
-    Parameters
-    ----------
-    adata : ad.AnnData
-        Input AnnData
-    genes_union : list
-        List of all genes to include
-        
-    Returns
-    -------
-    ad.AnnData
-        Reindexed AnnData with all genes from genes_union
-    """
-    current_genes = list(adata.var_names)
-    missing_genes = [g for g in genes_union if g not in current_genes]
-    
-    if not missing_genes:
-        # Already has all genes, just reorder
-        return adata[:, genes_union].copy()
-    
-    logger.debug(f"Adding {len(missing_genes)} missing genes (filled with zeros)")
-    
-    # Create zero matrix for missing genes (use sparse for efficiency)
-    n_obs = adata.n_obs
-    n_missing = len(missing_genes)
-    
-    if sp.issparse(adata.X):
-        zero_matrix = sp.csr_matrix((n_obs, n_missing), dtype=adata.X.dtype)
-    else:
-        zero_matrix = np.zeros((n_obs, n_missing), dtype=adata.X.dtype)
-    
-    # Create AnnData for missing genes
-    missing_var = pd.DataFrame(index=missing_genes)
-    adata_missing = ad.AnnData(
-        X=zero_matrix,
-        obs=adata.obs,
-        var=missing_var
-    )
-    
-    # Concatenate along gene axis (axis=1)
-    adata_concat = ad.concat([adata, adata_missing], axis=1, join='outer')
-    
-    # Reorder to match genes_union
-    return adata_concat[:, genes_union].copy()
 
 
 def _clip_negative_values(X) -> int:
