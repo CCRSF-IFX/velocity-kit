@@ -5,6 +5,7 @@ import sys
 import logging
 import os
 
+from . import assemble
 from .platforms import parsebio, pipseq, tenx
 
 logger = logging.getLogger(__name__)
@@ -122,6 +123,19 @@ def main():
     )
     scalebio_parser.add_argument("--placeholder", help="Coming soon")
 
+    # Multi-input assembly subcommand
+    assemble_parser = subparsers.add_parser(
+        "assemble",
+        help="Assemble multiple loom/H5AD inputs into one canonical H5AD",
+        description=(
+            "Read input paths and per-input annotations from a CSV/TSV manifest, "
+            "validate spliced/unspliced layers and gene identities, make cell IDs "
+            "unique by source, and write one combined H5AD."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    assemble.add_arguments(assemble_parser)
+
     # scVelo Analysis subcommand
     scvelo_parser = subparsers.add_parser(
         "run-scvelo",
@@ -231,6 +245,8 @@ def main():
     elif args.platform == "prep-scalebio":
         logger.error("ScaleBio support coming soon!")
         sys.exit(1)
+    elif args.platform == "assemble":
+        assemble.run(args)
     elif args.platform == "run-scvelo":
         run_scvelo(args)
     else:

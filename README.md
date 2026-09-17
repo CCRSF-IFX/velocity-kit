@@ -129,6 +129,7 @@ Available platform commands:
 - `prep-tenx` - Prepare velocity matrices from 10x Genomics CellRanger outputs
 - `prep-parse` - Prepare velocity matrices directly from Parse Biosciences Split Pipe transcript assignments
 - `prep-scalebio` - Prepare velocity matrices from ScaleBio outputs (coming soon)
+- `assemble` - Combine multiple loom/H5AD inputs from a sample manifest
 - `run-scvelo` - Run scVelo analysis and generate a report from loom or H5AD input
 
 ### PIPseq Detailed Usage
@@ -253,6 +254,32 @@ match is required. Missing, inconsistent, or ambiguous mappings stop with an
 error rather than silently assigning the wrong cell identities. For relocated
 results, only each logged path's base folder name is used under the supplied
 `--sublibraries-dir`.
+
+### Assemble Multiple Velocity Inputs
+
+Combine multiple `.loom` or `.h5ad` files into one canonical H5AD using a
+CSV/TSV manifest. The manifest requires a `path` column; other columns become
+per-cell annotations. An optional unique `source` column controls the suffix
+used to make cell identifiers unique.
+
+```csv
+path,source,sample,batch
+E6_rep1.loom,E6_rep1,Cb_E6,run1
+E6_rep2.loom,E6_rep2,Cb_E6,run2
+E7.loom,E7,Cb_E7,run1
+```
+
+```bash
+velocity-kit assemble \
+  --manifest samples.csv \
+  --output combined_velocity.h5ad
+```
+
+By default, all inputs must contain exactly the same unique gene identifiers;
+gene order may differ and is aligned automatically. Use
+`--gene-join intersection` explicitly to retain only genes shared by every
+input. `X` is standardized to the `spliced` layer, while both kinetic layers
+and assembly provenance are preserved.
 
 ### scVelo Analysis Report
 

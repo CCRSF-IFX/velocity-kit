@@ -7,11 +7,11 @@ pytest.importorskip("scvelo")
 
 from anndata import AnnData
 
+from velocitykit.io import read_velocity_input
 from velocitykit.scvelo_report import (
     _plot_filename,
     attach_cell_metadata,
     calculate_input_qc_metrics,
-    read_velocity_input,
     subset_cells,
 )
 
