@@ -18,7 +18,7 @@ import warnings
 warnings.filterwarnings('ignore', category=UserWarning, module='louvain')
 warnings.filterwarnings('ignore', message='pkg_resources is deprecated')
 
-__version__ = "0.2.1"
+__version__ = "0.3.0"
 __author__ = "Shaojun Xie"
 __email__ = "xies4@nih.gov"
 
@@ -27,9 +27,15 @@ from .core import (
     align_and_union,
     build_velocity_adata,
 )
+from .platforms.parsebio import (
+    build_parse_sublibrary_adata,
+    combine_parse_sublibraries,
+)
 
 __all__ = [
     "load_10x_mtx",
     "align_and_union",
     "build_velocity_adata",
+    "build_parse_sublibrary_adata",
+    "combine_parse_sublibraries",
 ]

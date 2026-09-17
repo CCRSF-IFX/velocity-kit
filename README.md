@@ -11,7 +11,7 @@ Standard RNA velocity methods expect **spliced** and **unspliced** counts, but m
 
 - ✅ **Fluent BioSciences (PIPseq)** - via PIPseeker
 - ✅ **10x Genomics** - via CellRanger with `--include-introns`
-- 🚧 **Parse Biosciences** - Coming soon  
+- ✅ **Parse Biosciences** - via Split Pipe transcript assignments
 
 ## Installation
 
@@ -71,6 +71,34 @@ velocity-kit prep-tenx \
 velocity-kit run-scvelo output.loom -o reports/sample1
 ```
 
+### Parse Biosciences (Split Pipe)
+
+```bash
+velocity-kit prep-parse \
+  --sublibrary /path/to/sublibrary1 \
+  --sublibrary /path/to/sublibrary2 \
+  --combined-metadata /path/to/combined-output \
+  --out-h5ad parse_velocity.h5ad \
+  --out-loom parse_velocity.loom
+```
+
+VelocityKit reads `process/tscp_assignment.csv.gz`, restricts counts to the
+cells in `all-sample/DGE_filtered/cell_metadata.csv`, and reproduces the
+combined output's `__s1`, `__s2`, ... cell identities. When
+`--combined-metadata` points to the combined output directory, the Split Pipe
+log determines the suffix mapping and the combined metadata validates it. CLI
+sublibraries may therefore be supplied in any order.
+
+If sublibrary results have moved since combine mode ran, specify their new
+parent location instead. Only the base folder names are taken from the log:
+
+```bash
+velocity-kit prep-parse \
+  --sublibraries-dir /new/location/of/sublibrary-results \
+  --combined-metadata /path/to/combined-output \
+  --out-h5ad parse_velocity.h5ad
+```
+
 **Note**: You can specify just `--out-h5ad` or just `--out-loom` if you only need one format.
 
 ## Usage
@@ -84,7 +112,7 @@ velocity-kit <platform-command> [options]
 Available platform commands:
 - `prep-pipseq` - Prepare velocity matrices from PIPseeker outputs
 - `prep-tenx` - Prepare velocity matrices from 10x Genomics CellRanger outputs
-- `prep-parse` - Prepare velocity matrices from Parse Biosciences outputs (coming soon)
+- `prep-parse` - Prepare velocity matrices from Parse Biosciences Split Pipe outputs
 - `prep-scalebio` - Prepare velocity matrices from ScaleBio outputs (coming soon)
 - `run-scvelo` - Run scVelo analysis and generate comprehensive report from loom file
 
@@ -174,6 +202,42 @@ velocity-kit prep-tenx \
      --sample=MySample \
      --include-introns
    ```
+
+### Parse Biosciences Detailed Usage
+
+`prep-parse` follows the Parse Biosciences scVelo workflow: rows marked
+`exonic=True` in each transcript-assignment table become the `spliced` layer,
+and all other assigned transcripts become the `unspliced` layer. The main
+matrix contains their sum. Counts are streamed from the compressed files, so
+they do not need to be manually decompressed.
+
+#### Required Arguments
+
+- One input form: repeat `--sublibrary` for every Split Pipe sublibrary output,
+  or use `--sublibraries-dir` for a new parent directory containing relocated
+  result folders whose base names match those recorded in the combine log.
+- `--combined-metadata`: Combined Split Pipe output directory (preferred) or
+  its `cell_metadata.csv`.
+- At least one of `--out-h5ad` or `--out-loom`.
+
+#### Optional Arguments
+
+- `--gene-column`: Use `gene_name` (default) or stable IDs from `gene`.
+- `--chunk-size`: Number of transcript rows processed at once (default:
+  1,000,000).
+
+The filtered cell metadata is used instead of manually entered transcript
+cutoffs. This reproduces Split Pipe's final called-cell set, including runs
+where samples within one sublibrary have different calling thresholds.
+
+Suffixes are never inferred from CLI position when combined results are
+provided. VelocityKit uses the ordered sublibrary paths recorded in the Split
+Pipe log and verifies every local metadata row against the corresponding
+combined `__sN` partition. If only the CSV is supplied, a unique exact metadata
+match is required. Missing, inconsistent, or ambiguous mappings stop with an
+error rather than silently assigning the wrong cell identities. For relocated
+results, only each logged path's base folder name is used under the supplied
+`--sublibraries-dir`.
 
 ### scVelo Analysis Report
 

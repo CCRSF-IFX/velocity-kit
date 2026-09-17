@@ -5,7 +5,7 @@ import sys
 import logging
 import os
 
-from .platforms import pipseq, tenx
+from .platforms import parsebio, pipseq, tenx
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ def get_version():
             return version("velocity-kit")
         except Exception:
             # Fallback to hardcoded version if package not installed
-            return "0.2.1"
+            return "0.3.0"
 
 
 def setup_logging(verbosity: int = 1):
@@ -102,12 +102,18 @@ def main():
     )
     tenx.add_arguments(tenx_parser)
 
-    # Parse Biosciences subcommand (placeholder)
+    # Parse Biosciences subcommand
     parse_parser = subparsers.add_parser(
         "prep-parse",
-        help="Prepare velocity matrices from Parse Biosciences outputs (Coming soon)",
+        help="Prepare velocity matrices from Parse Biosciences Split Pipe outputs",
+        description=(
+            "Build velocity-compatible spliced/unspliced matrices directly from "
+            "Split Pipe transcript assignments. The combine log and combined "
+            "cell metadata determine and validate each sublibrary's __sN suffix."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parse_parser.add_argument("--placeholder", help="Coming soon")
+    parsebio.add_arguments(parse_parser)
 
     # ScaleBio subcommand (placeholder)
     scalebio_parser = subparsers.add_parser(
@@ -168,8 +174,7 @@ def main():
     elif args.platform == "prep-tenx":
         tenx.run(args)
     elif args.platform == "prep-parse":
-        logger.error("Parse Biosciences support coming soon!")
-        sys.exit(1)
+        parsebio.run(args)
     elif args.platform == "prep-scalebio":
         logger.error("ScaleBio support coming soon!")
         sys.exit(1)

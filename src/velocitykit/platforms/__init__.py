@@ -1,5 +1,5 @@
 """Platform modules for velocity-kit."""
 
-from . import pipseq, tenx, common
+from . import common, parsebio, pipseq, tenx
 
-__all__ = ["pipseq", "tenx", "common"]
+__all__ = ["common", "parsebio", "pipseq", "tenx"]
