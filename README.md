@@ -5,13 +5,24 @@
 
 ## Overview
 
-Standard RNA velocity methods expect **spliced** and **unspliced** counts, but many modern single-cell platforms don't directly output these layers. `velocity-kit` provides platform-specific tools to generate velocity-compatible matrices using the **dual-run subtraction method**.
+Standard RNA velocity methods expect **spliced** and **unspliced** count
+layers, but single-cell pipelines expose the information needed to build those
+layers in different ways. `velocity-kit` converts platform-native outputs into
+velocity-ready H5AD and loom files using the preparation strategy appropriate
+for each platform.
+
+VelocityKit is not limited to dual-run subtraction. It currently supports both
+direct transcript classification and subtraction of matched count runs:
 
 ### Supported Platforms
 
-- ✅ **Fluent BioSciences (PIPseq)** - via PIPseeker
-- ✅ **10x Genomics** - via CellRanger with `--include-introns`
-- ✅ **Parse Biosciences** - via Split Pipe transcript assignments
+| Platform | Input | Preparation strategy |
+| --- | --- | --- |
+| **Parse Biosciences** | Split Pipe transcript assignments | Directly classify transcripts with the `exonic` field; no second count run or subtraction |
+| **Fluent BioSciences (PIPseq)** | Matched standard and exons-only PIPseeker runs | Dual-run subtraction (`unspliced = total - exonic`) |
+| **10x Genomics** | Matched Cell Ranger runs with and without introns | Dual-run subtraction (`unspliced = total - exonic`) |
+
+ScaleBio support is planned but not yet implemented.
 
 ## Installation
 
@@ -48,7 +59,7 @@ pip install velocity-kit[dev]
 ### PIPseq (PIPseeker)
 
 ```bash
-# Step 1: Generate velocity-compatible matrices
+# Build velocity layers by dual-run subtraction
 velocity-kit prep-pipseq \
   --total /path/to/pipseeker_total_run \
   --exonic /path/to/pipseeker_exons_only_run \
@@ -61,7 +72,7 @@ velocity-kit run-scvelo output.loom -o reports/sample1
 ### 10x Genomics (CellRanger)
 
 ```bash
-# Step 1: Generate velocity-compatible matrices
+# Build velocity layers by dual-run subtraction
 velocity-kit prep-tenx \
   --total /path/to/cellranger_with_introns/raw_feature_bc_matrix \
   --exonic /path/to/cellranger_standard/raw_feature_bc_matrix \
@@ -72,6 +83,9 @@ velocity-kit run-scvelo output.loom -o reports/sample1
 ```
 
 ### Parse Biosciences (Split Pipe)
+
+Parse data are built directly from transcript assignments; an exons-only
+rerun is not required.
 
 ```bash
 velocity-kit prep-parse \
@@ -110,9 +124,10 @@ velocity-kit <platform-command> [options]
 ```
 
 Available platform commands:
+
 - `prep-pipseq` - Prepare velocity matrices from PIPseeker outputs
 - `prep-tenx` - Prepare velocity matrices from 10x Genomics CellRanger outputs
-- `prep-parse` - Prepare velocity matrices from Parse Biosciences Split Pipe outputs
+- `prep-parse` - Prepare velocity matrices directly from Parse Biosciences Split Pipe transcript assignments
 - `prep-scalebio` - Prepare velocity matrices from ScaleBio outputs (coming soon)
 - `run-scvelo` - Run scVelo analysis and generate comprehensive report from loom file
 
@@ -135,7 +150,7 @@ Available platform commands:
 #### Example
 
 ```bash
-# Generate velocity-compatible matrices
+# Generate velocity-compatible matrices by dual-run subtraction
 velocity-kit prep-pipseq \
   --total Analysis/total_run \
   --exonic Analysis/exonic_raw_run \
@@ -167,7 +182,7 @@ velocity-kit run-scvelo velocity.loom \
 #### Example
 
 ```bash
-# Method 1: Point to the count directories directly
+# Method 1: Point to the matched count directories directly
 velocity-kit prep-tenx \
   --total cellranger_introns/outs/raw_feature_bc_matrix \
   --exonic cellranger_standard/outs/raw_feature_bc_matrix \
@@ -175,7 +190,7 @@ velocity-kit prep-tenx \
   -v
 
 # Generate analysis report
-velocity-kit analyze velocity.loom -o reports/sample1
+velocity-kit run-scvelo velocity.loom -o reports/sample1
 
 # Method 2: Point to the parent directories (will auto-find raw_feature_bc_matrix)
 velocity-kit prep-tenx \
@@ -294,9 +309,11 @@ The report includes:
 
 ### Python API
 
+#### Dual-run subtraction
+
 ```python
-from velocitykit import build_velocity_adata_from_anndata
 import scanpy as sc
+from velocitykit.platforms.common import build_velocity_adata_from_anndata
 
 # Load matrices using scanpy (recommended in v0.2.0+)
 adata_total = sc.read_10x_mtx("total_run/raw_feature_bc_matrix", var_names='gene_symbols', gex_only=True)
@@ -309,6 +326,24 @@ adata = build_velocity_adata_from_anndata(adata_total, adata_exonic)
 adata.write_h5ad("output.h5ad")
 adata.write_loom("output.loom")
 ```
+
+#### Parse transcript assignments
+
+```python
+from pathlib import Path
+from velocitykit import build_parse_sublibrary_adata, combine_parse_sublibraries
+
+sublibrary = build_parse_sublibrary_adata(
+    Path("sublibrary1/process/tscp_assignment.csv.gz"),
+    Path("sublibrary1/all-sample/DGE_filtered/cell_metadata.csv"),
+)
+
+adata = combine_parse_sublibraries([sublibrary], labels=["1"])
+adata.write_h5ad("parse_velocity.h5ad")
+```
+
+For multiple Parse sublibraries, the `prep-parse` CLI is recommended because
+it validates the `__sN` mapping against the combined Split Pipe output.
 
 #### Legacy API (v0.1.x)
 
@@ -329,7 +364,7 @@ X_exon, bc_exon, g_exon = load_10x_mtx(
     Path("exonic_run/features.tsv.gz")
 )
 
-# Align to union of genes and barcodes
+# Align the matrices to the total run's genes and filtered barcodes
 X_total_u, X_exon_u, genes_u, bc_u = align_and_union(
     X_total, bc_total, g_total,
     X_exon, bc_exon, g_exon
@@ -345,7 +380,22 @@ adata.write_loom("output.loom")
 
 **Note**: The scanpy-based approach (v0.2.0+) is more robust and handles edge cases better. The legacy API is maintained for backward compatibility.
 
-## Why Dual-Run Subtraction?
+## Preparation Strategies
+
+### Direct Transcript Classification
+
+Parse Split Pipe records one row per assigned transcript and provides an
+`exonic` classification. VelocityKit uses this information directly:
+
+1. Retain transcripts belonging to the filtered cells in each sublibrary.
+2. Assign `exonic=True` transcripts to the `spliced` layer.
+3. Assign `exonic=False` transcripts to the `unspliced` layer.
+4. Combine sublibraries while reproducing Split Pipe's `__sN` cell identities.
+
+This method uses a single set of Split Pipe results and does not perform
+subtraction.
+
+### Dual-Run Subtraction
 
 For platforms that use complex molecular counting (MI correction, deduplication, multi-mapping resolution), BAM-based velocity methods can be **invalid** because these counting transformations don't survive in the BAM file.
 
@@ -357,17 +407,26 @@ The **dual-run subtraction** approach:
 
 This preserves the platform's counting model and produces valid velocity layers.
 
-### When to Use Dual-Run Subtraction
+### Which Strategy Should I Use?
 
-- ✅ **PIPseq**: Always use dual-run (BAM-based methods are incorrect)
-- ✅ **10x Genomics**: Recommended for consistency, especially with CellRanger ≥7.0
-- ⚠️ **Other platforms**: Evaluate whether platform-specific counting differs from simple read counting
+- **Parse Biosciences**: Use `prep-parse` for direct classification from Split
+  Pipe transcript assignments.
+- **PIPseq**: Use `prep-pipseq` with matched standard and exons-only runs.
+- **10x Genomics**: Use `prep-tenx` with matched Cell Ranger runs with and
+  without introns.
+- **Other platforms**: A new platform adapter can use direct classifications,
+  dual-run subtraction, or another platform-appropriate strategy.
 
 ## Important Notes
 
-⚠️ **For PIPseq**: The `--exonic` directory must point to the **RAW/UNFILTERED** exons-only run.
+⚠️ **For PIPseq and 10x dual-run workflows**: The `--exonic` directory
+must point to the **RAW/UNFILTERED** exons-only matrix.
 
 Do NOT use a filtered exonic matrix, because the called-cell set may not match the total matrix. This will cause barcode mismatches and incorrect velocity estimates.
+
+⚠️ **For Parse Biosciences**: Prefer passing the combined Split Pipe
+output directory to `--combined-metadata`. This allows VelocityKit to use the
+combine log and validate each sublibrary's `__sN` suffix mapping.
 
 ## Requirements
 
