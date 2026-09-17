@@ -9,7 +9,9 @@ from anndata import AnnData, read_h5ad
 
 from velocitykit.io import read_velocity_input
 from velocitykit.scvelo_report import (
+    _group_anndata_output,
     _plot_filename,
+    _write_per_group_index,
     attach_cell_metadata,
     calculate_input_qc_metrics,
     subset_cells,
@@ -220,3 +222,41 @@ def test_write_analyzed_adata_preserves_analysis_fields(tmp_path):
 
     with pytest.raises(ValueError, match="must use the .h5ad extension"):
         write_analyzed_adata(adata, str(tmp_path / "analyzed.loom"))
+
+
+def test_per_group_anndata_paths_support_suffixes_and_templates(tmp_path):
+    base = tmp_path / "analyzed.h5ad"
+    template = tmp_path / "analyzed_{group}.h5ad"
+
+    assert _group_anndata_output(str(base), "E6") == str(
+        tmp_path / "analyzed_E6.h5ad"
+    )
+    assert _group_anndata_output(str(template), "E7") == str(
+        tmp_path / "analyzed_E7.h5ad"
+    )
+    assert _group_anndata_output(None, "E6") is None
+
+
+def test_per_group_index_links_independent_reports(tmp_path):
+    first = tmp_path / "E6" / "E6_report.html"
+    second = tmp_path / "E7" / "E7_report.html"
+    first.parent.mkdir()
+    second.parent.mkdir()
+    first.write_text("E6")
+    second.write_text("E7")
+
+    index = _write_per_group_index(
+        output_dir=str(tmp_path),
+        sample_name="chicken",
+        group_by="sample",
+        group_results=[
+            {"value": "Cb_E6", "n_cells": 10, "report": str(first)},
+            {"value": "Cb_E7", "n_cells": 12, "report": str(second)},
+        ],
+    )
+    html = (tmp_path / "chicken_scvelo_index.html").read_text()
+
+    assert index == str(tmp_path / "chicken_scvelo_index.html")
+    assert "Independent analyses grouped by <strong>sample</strong>" in html
+    assert 'href="E6/E6_report.html"' in html
+    assert "Cb_E7" in html

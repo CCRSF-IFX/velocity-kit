@@ -278,6 +278,63 @@ def write_analyzed_adata(adata, output_path: str) -> str:
     return str(path)
 
 
+def _group_slug(value: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "_", str(value)).strip("._")
+    return slug or "group"
+
+
+def _group_anndata_output(output_path: Optional[str], group: str) -> Optional[str]:
+    if output_path is None:
+        return None
+    if "{group}" in output_path:
+        return output_path.format(group=group)
+    path = Path(output_path)
+    return str(path.with_name(f"{path.stem}_{group}{path.suffix}"))
+
+
+def _write_per_group_index(
+    output_dir: str,
+    sample_name: str,
+    group_by: str,
+    group_results: Sequence[Dict[str, Any]],
+) -> str:
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    report_path = os.path.join(output_dir, f"{sample_name}_scvelo_index.html")
+    html_parts = [
+        "<!DOCTYPE html>",
+        "<html>",
+        "<head>",
+        f"<title>scVelo per-group report - {escape(sample_name)}</title>",
+        '<meta charset="utf-8" />',
+        "<style>",
+        "body { font-family: sans-serif; max-width: 1000px; margin: 0 auto; }",
+        "table { border-collapse: collapse; width: 100%; }",
+        "th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }",
+        "</style>",
+        "</head>",
+        "<body>",
+        f"<h1>scVelo Per-Group Report: {escape(sample_name)}</h1>",
+        f"<p>Generated: {timestamp}</p>",
+        f"<p>Independent analyses grouped by <strong>{escape(group_by)}</strong>.</p>",
+        "<table>",
+        "<thead><tr><th>Group</th><th>Cells</th><th>Report</th></tr></thead>",
+        "<tbody>",
+    ]
+    for result in group_results:
+        relative_report = os.path.relpath(result["report"], output_dir)
+        html_parts.append(
+            "<tr>"
+            f"<td>{escape(result['value'])}</td>"
+            f"<td>{result['n_cells']:,}</td>"
+            f'<td><a href="{escape(relative_report)}">Open report</a></td>'
+            "</tr>"
+        )
+    html_parts.extend(["</tbody>", "</table>", "</body>", "</html>"])
+    with open(report_path, "w") as handle:
+        handle.write("\n".join(html_parts))
+    return report_path
+
+
 def run_scvelo_and_generate_report(
     input_path: str,
     output_dir: str,
@@ -289,6 +346,11 @@ def run_scvelo_and_generate_report(
     subset_by: Optional[str] = None,
     subset_values: Optional[Sequence[str]] = None,
     save_anndata: Optional[str] = None,
+    analysis_mode: str = "joint",
+    group_by: Optional[str] = None,
+    _adata=None,
+    _metadata_details: Optional[Dict[str, Any]] = None,
+    _subset_details: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
     Run a standard scVelo pipeline on a loom or H5AD file and generate an HTML report
@@ -316,6 +378,10 @@ def run_scvelo_and_generate_report(
         Values retained from ``subset_by``.
     save_anndata : str, optional
         Output path for the fully analyzed AnnData object.
+    analysis_mode : {"joint", "per-group"}
+        Analyze all selected cells jointly or run independent analyses per group.
+    group_by : str, optional
+        Observation column defining independent analyses in per-group mode.
 
     Returns
     -------
@@ -337,38 +403,42 @@ def run_scvelo_and_generate_report(
     # -------------------------------------------------------------------------
     # Load data
     # -------------------------------------------------------------------------
-    print(f"[{sample_name}] Reading velocity input: {input_path}")
-    adata = read_velocity_input(input_path)
-
     color_by = list(dict.fromkeys(color_by or []))
-    metadata_details = None
-    if metadata_file is not None:
-        print(f"[{sample_name}] Attaching cell metadata: {metadata_file}")
-        metadata_details = attach_cell_metadata(
-            adata,
-            metadata_file=metadata_file,
-            metadata_key=metadata_key,
-            adata_key=adata_key,
-        )
-        print(
-            f"[{sample_name}] Matched {metadata_details['matched_cells']} cells "
-            f"using {metadata_details['metadata_key']} -> "
-            f"{metadata_details['adata_key']}"
-        )
+    if _adata is None:
+        print(f"[{sample_name}] Reading velocity input: {input_path}")
+        adata = read_velocity_input(input_path)
+        metadata_details = None
+        if metadata_file is not None:
+            print(f"[{sample_name}] Attaching cell metadata: {metadata_file}")
+            metadata_details = attach_cell_metadata(
+                adata,
+                metadata_file=metadata_file,
+                metadata_key=metadata_key,
+                adata_key=adata_key,
+            )
+            print(
+                f"[{sample_name}] Matched {metadata_details['matched_cells']} cells "
+                f"using {metadata_details['metadata_key']} -> "
+                f"{metadata_details['adata_key']}"
+            )
 
-    subset_details = None
-    if subset_by is not None:
-        adata, subset_details = subset_cells(
-            adata,
-            subset_by=subset_by,
-            subset_values=subset_values or [],
-        )
-        print(
-            f"[{sample_name}] Retained {subset_details['retained_cells']} of "
-            f"{subset_details['original_cells']} cells where "
-            f"{subset_details['column']} is one of "
-            f"{', '.join(subset_details['values'])}"
-        )
+        subset_details = None
+        if subset_by is not None:
+            adata, subset_details = subset_cells(
+                adata,
+                subset_by=subset_by,
+                subset_values=subset_values or [],
+            )
+            print(
+                f"[{sample_name}] Retained {subset_details['retained_cells']} of "
+                f"{subset_details['original_cells']} cells where "
+                f"{subset_details['column']} is one of "
+                f"{', '.join(subset_details['values'])}"
+            )
+    else:
+        adata = _adata
+        metadata_details = _metadata_details
+        subset_details = _subset_details
 
     missing_colors = [column for column in color_by if column not in adata.obs]
     if missing_colors:
@@ -377,6 +447,67 @@ def run_scvelo_and_generate_report(
             f"{', '.join(missing_colors)}. Available columns: "
             f"{', '.join(map(str, adata.obs.columns))}"
         )
+
+    if analysis_mode not in {"joint", "per-group"}:
+        raise ValueError("analysis_mode must be 'joint' or 'per-group'")
+    if analysis_mode == "joint" and group_by is not None:
+        raise ValueError("group_by is only valid with analysis_mode='per-group'")
+    if analysis_mode == "per-group":
+        if group_by is None:
+            raise ValueError("group_by is required with analysis_mode='per-group'")
+        if group_by not in adata.obs:
+            raise ValueError(
+                f"Per-group column {group_by!r} was not found. Available columns: "
+                f"{', '.join(map(str, adata.obs.columns))}"
+            )
+        if adata.obs[group_by].isna().any():
+            raise ValueError(f"Per-group column {group_by!r} contains missing values")
+
+        values = list(pd.unique(adata.obs[group_by].astype(str)))
+        slugs = [_group_slug(value) for value in values]
+        if len(set(slugs)) != len(slugs):
+            raise ValueError(
+                f"Values in per-group column {group_by!r} produce duplicate path labels"
+            )
+
+        group_results = []
+        for value, slug in zip(values, slugs):
+            mask = adata.obs[group_by].astype(str).to_numpy() == value
+            group_adata = adata[mask].copy()
+            group_output_dir = os.path.join(output_dir, slug)
+            group_sample_name = f"{sample_name}_{slug}"
+            group_details = {
+                "column": group_by,
+                "values": [value],
+                "original_cells": int(adata.n_obs),
+                "retained_cells": int(group_adata.n_obs),
+            }
+            print(
+                f"[{sample_name}] Running independent group {value}: "
+                f"{group_adata.n_obs} cells"
+            )
+            group_report = run_scvelo_and_generate_report(
+                input_path=input_path,
+                output_dir=group_output_dir,
+                sample_name=group_sample_name,
+                color_by=color_by,
+                save_anndata=_group_anndata_output(save_anndata, slug),
+                analysis_mode="joint",
+                _adata=group_adata,
+                _metadata_details=metadata_details,
+                _subset_details=group_details,
+            )
+            group_results.append(
+                {"value": value, "n_cells": int(group_adata.n_obs), "report": group_report}
+            )
+        index_path = _write_per_group_index(
+            output_dir=output_dir,
+            sample_name=sample_name,
+            group_by=group_by,
+            group_results=group_results,
+        )
+        print(f"[{sample_name}] Per-group index written to: {index_path}")
+        return index_path
     
     # Fix categorical columns that may cause issues with newer pandas
     # Convert any categorical columns to regular strings to avoid

@@ -300,6 +300,8 @@ Generate a comprehensive HTML report with QC plots, velocity analysis, and visua
 - `--subset-by COLUMN`: Observation/metadata column used to select cells before preprocessing
 - `--subset-values VALUE [VALUE ...]`: One or more values retained from `--subset-by`
 - `--save-anndata PATH`: Save the fully analyzed AnnData to an `.h5ad` file
+- `--analysis-mode {joint,per-group}`: Analyze selected cells together or independently by group
+- `--group-by COLUMN`: Column defining independent analyses in `per-group` mode
 - `-v, --verbose`: Increase verbosity level (use `-v` for info, `-vv` for debug)
 
 External metadata are joined before the expensive scVelo calculation. Every
@@ -313,6 +315,13 @@ Cell subsetting is applied after external metadata validation and before
 normalization, variable-gene selection, neighborhood construction, or velocity
 estimation. `--subset-by` and `--subset-values` must be supplied together, and
 every requested value must exist.
+
+`--analysis-mode joint` is the default and creates one neighbor graph and
+velocity model across all selected cells. `--analysis-mode per-group` runs the
+entire pipeline independently for every `--group-by` value and writes a parent
+HTML index linking the group reports. If `--save-anndata analyzed.h5ad` is also
+used, per-group files are named `analyzed_<group>.h5ad`; a path containing
+`{group}` can be used as an explicit template.
 
 #### Requirements
 
@@ -357,6 +366,14 @@ velocity-kit run-scvelo velocity.loom \
   --subset-values Cb_E6 Cb_E7 \
   --color-by sample \
   --save-anndata reports/Cb_E6_E7/analyzed.h5ad
+
+# Run fully independent analyses for every selected sample
+velocity-kit run-scvelo velocity.loom \
+  -o reports/by_sample \
+  --analysis-mode per-group \
+  --group-by sample \
+  --color-by sample \
+  --save-anndata reports/by_sample/analyzed_{group}.h5ad
 
 # Use default output directory and auto-detect sample name
 velocity-kit run-scvelo velocity.loom

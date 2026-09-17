@@ -227,6 +227,21 @@ def main():
         ),
     )
     scvelo_parser.add_argument(
+        "--analysis-mode",
+        choices=("joint", "per-group"),
+        default="joint",
+        help=(
+            "Analyze all selected cells together (joint, default) or run a "
+            "separate complete analysis for every --group-by value."
+        ),
+    )
+    scvelo_parser.add_argument(
+        "--group-by",
+        default=None,
+        metavar="COLUMN",
+        help="Observation/metadata column used with --analysis-mode per-group",
+    )
+    scvelo_parser.add_argument(
         "-v", "--verbose",
         action="count",
         default=1,
@@ -298,6 +313,13 @@ def run_scvelo(args):
         logger.error("--save-anndata must use the .h5ad extension")
         sys.exit(1)
 
+    if args.analysis_mode == "per-group" and not args.group_by:
+        logger.error("--group-by is required with --analysis-mode per-group")
+        sys.exit(1)
+    if args.analysis_mode == "joint" and args.group_by:
+        logger.error("--group-by is only valid with --analysis-mode per-group")
+        sys.exit(1)
+
     input_suffix = os.path.splitext(args.input_path)[1].lower()
     if input_suffix not in {".loom", ".h5ad"}:
         logger.error(
@@ -321,6 +343,8 @@ def run_scvelo(args):
             subset_by=args.subset_by,
             subset_values=args.subset_values,
             save_anndata=args.save_anndata,
+            analysis_mode=args.analysis_mode,
+            group_by=args.group_by,
         )
         logger.info(f"✓ Analysis report successfully generated: {report_path}")
     except Exception as e:
