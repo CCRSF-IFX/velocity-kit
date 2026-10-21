@@ -228,6 +228,18 @@ and all other assigned transcripts become the `unspliced` layer. The main
 matrix contains their sum. Counts are streamed from the compressed files, so
 they do not need to be manually decompressed.
 
+VelocityKit preserves this primary matrix when reading either H5AD or Loom.
+For direct Scanpy/AnnData Loom loading, use `read_loom(path, X_name="")` to
+select the stored primary matrix instead of the reader's default spliced layer.
+Reconstructed per-cell transcript and gene counts must match `tscp_count` and
+`gene_count` when those metadata columns are present. Missing stable IDs or
+genomes, and conflicting feature identities within or across sublibraries,
+stop preparation. Genome annotations are retained in `var["genome"]`.
+
+Output paths must use `.h5ad` and `.loom` respectively and refer to distinct
+files. Both formats are staged before replacing existing results; each file
+replacement is atomic, but the pair is not a single filesystem transaction.
+
 #### Required Arguments
 
 - One input form: repeat `--sublibrary` for every Split Pipe sublibrary output,

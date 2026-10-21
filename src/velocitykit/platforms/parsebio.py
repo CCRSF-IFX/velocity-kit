@@ -8,7 +8,9 @@ workflows, Parse data do not require a second count run or subtraction.
 
 import logging
 import re
+from contextlib import ExitStack
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import anndata as ad
@@ -455,6 +457,8 @@ def build_parse_sublibrary_adata(
     genes: List[str] = []
     gene_ids = {}
     gene_names = {}
+    gene_genomes = {}
+    id_genomes = {}
 
     spliced_rows: List[np.ndarray] = []
     spliced_columns: List[np.ndarray] = []
@@ -464,7 +468,7 @@ def build_parse_sublibrary_adata(
     unspliced_values: List[np.ndarray] = []
     retained_transcripts = 0
 
-    required_columns = ["bc_wells", "gene", "gene_name", "exonic"]
+    required_columns = ["bc_wells", "genome", "gene", "gene_name", "exonic"]
     logger.info(
         "Reading %s in chunks of %s rows for %s called cells",
         transcript_path,
@@ -476,29 +480,38 @@ def build_parse_sublibrary_adata(
         chunks = pd.read_csv(
             transcript_path,
             usecols=required_columns,
-            dtype={"bc_wells": str, "gene": str, "gene_name": str},
+            dtype={
+                column: str for column in ("bc_wells", "genome", "gene", "gene_name")
+            },
             chunksize=chunk_size,
         )
         for chunk_number, chunk in enumerate(chunks, start=1):
             chunk = chunk.loc[chunk["bc_wells"].isin(cell_to_index)].copy()
-            alternate_gene_column = (
-                "gene" if gene_column == "gene_name" else "gene_name"
-            )
-            chunk["_feature_key"] = chunk[gene_column].fillna(
-                chunk[alternate_gene_column]
-            )
-            chunk = chunk.loc[chunk["_feature_key"].notna()].copy()
             if chunk.empty:
                 continue
+            if chunk[["gene", "genome"]].isna().any().any():
+                raise ValueError(f"Missing stable gene ID or genome in {transcript_path}")
+            if (
+                chunk["gene"].str.strip().eq("").any()
+                or chunk["genome"].str.strip().eq("").any()
+            ):
+                raise ValueError(f"Empty stable gene ID or genome in {transcript_path}")
+            chunk["_feature_key"] = chunk[gene_column].fillna(chunk["gene"])
 
             chunk["_feature_key"] = chunk["_feature_key"].astype(str)
             chunk["exonic"] = _parse_exonic(chunk["exonic"], transcript_path)
 
-            unique_features = chunk.drop_duplicates(["_feature_key", "gene"])
-            for key, gene_id, gene_name in unique_features[
-                ["_feature_key", "gene", "gene_name"]
+            unique_features = chunk.drop_duplicates(["_feature_key", "gene", "genome"])
+            for key, gene_id, gene_name, genome in unique_features[
+                ["_feature_key", "gene", "gene_name", "genome"]
             ].itertuples(index=False, name=None):
-                stable_id = str(gene_id) if pd.notna(gene_id) else str(key)
+                stable_id = str(gene_id)
+                if stable_id in id_genomes and id_genomes[stable_id] != genome:
+                    raise ValueError(
+                        f"Stable gene ID {stable_id!r} maps to multiple genomes "
+                        f"in {transcript_path}"
+                    )
+                id_genomes[stable_id] = genome
                 if key in gene_to_index:
                     previous_id = str(gene_ids[key])
                     if gene_column == "gene_name" and stable_id != previous_id:
@@ -513,6 +526,7 @@ def build_parse_sublibrary_adata(
                     genes.append(key)
                     gene_ids[key] = stable_id
                     gene_names[key] = gene_name if pd.notna(gene_name) else key
+                    gene_genomes[key] = genome
 
             chunk["_cell_index"] = chunk["bc_wells"].map(cell_to_index)
             chunk["_gene_index"] = chunk["_feature_key"].map(gene_to_index)
@@ -564,11 +578,26 @@ def build_parse_sublibrary_adata(
         unspliced_rows, unspliced_columns, unspliced_values, shape
     )
     total = spliced + unspliced
+    for column, actual in (
+        ("tscp_count", np.asarray(total.sum(axis=1)).ravel()),
+        ("gene_count", np.diff(total.indptr)),
+    ):
+        if column in obs:
+            expected = pd.to_numeric(obs[column], errors="coerce").to_numpy()
+            mismatched = actual != expected
+            if mismatched.any():
+                examples = obs.index[mismatched][:5].tolist()
+                raise ValueError(
+                    f"Reconstructed {column} differs from metadata for "
+                    f"{int(mismatched.sum())} cells in {transcript_path} "
+                    f"(examples: {examples})"
+                )
 
     var = pd.DataFrame(
         {
             "gene": [gene_ids[key] for key in genes],
             "gene_name": [gene_names[key] for key in genes],
+            "genome": [gene_genomes[key] for key in genes],
         },
         index=pd.Index(genes),
     )
@@ -620,6 +649,17 @@ def combine_parse_sublibraries(
     if any(not label.isdigit() for label in labels):
         raise ValueError("Parse sublibrary suffix labels must be numeric")
 
+    var = pd.concat([adata.var for adata in adatas], axis=0)
+    for column in ("gene", "genome"):
+        if column in var and (var.groupby(level=0)[column].nunique() > 1).any():
+            raise ValueError(
+                f"Shared feature names map to conflicting {column} values "
+                "across sublibraries"
+            )
+    if {"gene", "genome"}.issubset(var.columns):
+        if (var.groupby("gene")["genome"].nunique() > 1).any():
+            raise ValueError("Stable gene IDs map to multiple genomes across sublibraries")
+
     combined = ad.concat(
         adatas,
         join="outer",
@@ -633,7 +673,6 @@ def combine_parse_sublibraries(
     # ``anndata.concat(merge="first")`` can leave annotations empty for genes
     # found only in later sublibraries. Rebuild var from the first occurrence
     # of every gene so gene IDs and symbols remain complete after an outer join.
-    var = pd.concat([adata.var for adata in adatas], axis=0)
     var = var.loc[~var.index.duplicated(keep="first")]
     combined.var = var.reindex(combined.var_names).copy()
     combined.obs["sublibrary"] = combined.obs["sublibrary"].astype(str)
@@ -673,33 +712,50 @@ def combine_parse_sublibraries(
     return combined
 
 
-def _write_outputs(
-    adata: ad.AnnData,
-    out_h5ad: Optional[str],
-    out_loom: Optional[str],
-) -> None:
+def _output_paths(out_h5ad: Optional[str], out_loom: Optional[str]) -> List[Path]:
     if not out_h5ad and not out_loom:
         raise ValueError(
             "At least one output format must be specified: --out-h5ad or --out-loom"
         )
-    if out_h5ad:
-        path = Path(out_h5ad)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        logger.info("Writing H5AD to %s", path)
-        adata.write_h5ad(path, compression="gzip")
-    if out_loom:
-        path = Path(out_loom)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        logger.info("Writing loom to %s", path)
-        adata.write_loom(path)
+    paths = []
+    for value, suffix in ((out_h5ad, ".h5ad"), (out_loom, ".loom")):
+        if value:
+            path = Path(value).resolve()
+            if path.suffix.lower() != suffix:
+                raise ValueError(f"Output {value!r} must use the {suffix} extension")
+            if path.is_dir():
+                raise ValueError(f"Output is a directory: {value}")
+            paths.append(path)
+    if len(paths) == 2 and (
+        paths[0] == paths[1]
+        or (paths[0].exists() and paths[1].exists() and paths[0].samefile(paths[1]))
+    ):
+        raise ValueError("H5AD and Loom outputs must use distinct paths")
+    return paths
+
+
+def _write_outputs(adata, out_h5ad: Optional[str], out_loom: Optional[str]) -> None:
+    paths = _output_paths(out_h5ad, out_loom)
+    with ExitStack() as stack:
+        staged = []
+        for path in paths:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            directory = stack.enter_context(TemporaryDirectory(dir=path.parent))
+            temporary = Path(directory) / path.name
+            logger.info("Writing %s", path)
+            if path.suffix.lower() == ".h5ad":
+                adata.write_h5ad(temporary, compression="gzip")
+            else:
+                adata.write_loom(temporary)
+            staged.append((temporary, path))
+        # Finish serialization of both formats before replacing existing results.
+        for temporary, path in staged:
+            temporary.replace(path)
 
 
 def run(args):
     """Run the Parse Biosciences preparation pipeline."""
-    if not args.out_h5ad and not args.out_loom:
-        raise ValueError(
-            "At least one output format must be specified: --out-h5ad or --out-loom"
-        )
+    _output_paths(args.out_h5ad, args.out_loom)
     if args.chunk_size <= 0:
         raise ValueError("--chunk-size must be greater than zero")
 

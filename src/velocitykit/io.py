@@ -102,6 +102,10 @@ def read_velocity_input(input_path: str):
             f"Unsupported input format {path.suffix or '<none>'!r}; expected {supported}"
         )
 
-    adata = sc.read(path)
+    # AnnData otherwise selects the spliced layer as X when reading Loom.
+    if path.suffix.lower() == ".loom":
+        adata = sc.read_loom(path, X_name="")
+    else:
+        adata = sc.read_h5ad(path)
     validate_velocity_adata(adata)
     return adata

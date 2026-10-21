@@ -1,4 +1,5 @@
 import gzip
+import os
 from pathlib import Path
 
 import numpy as np
@@ -6,6 +7,7 @@ import pandas as pd
 import pytest
 
 from velocitykit.platforms.parsebio import (
+    _write_outputs,
     build_parse_sublibrary_adata,
     combine_parse_sublibraries,
     resolve_sublibrary_labels,
@@ -37,7 +39,10 @@ def _write_sublibrary(root: Path, cells, transcripts):
         {
             "bc_wells": cells,
             "sample": [f"sample_{cell}" for cell in cells],
-            "tscp_count": [1] * len(cells),
+            "tscp_count": [sum(row[0] == cell for row in transcripts) for cell in cells],
+            "gene_count": [
+                len({row[2] for row in transcripts if row[0] == cell}) for cell in cells
+            ],
         }
     )
     metadata.to_csv(dge / "cell_metadata.csv", index=False)
@@ -128,6 +133,7 @@ def test_gene_id_mode_and_sublibrary_combination(tmp_path):
                 "sample_01_01_03",
             ],
             "tscp_count": [1, 1, 1],
+            "gene_count": [1, 1, 1],
         }
     ).to_csv(combined_metadata, index=False)
     (combined_root / "split-pipe_v1_8_2.log").write_text(
@@ -267,9 +273,135 @@ def test_suffix_inference_rejects_ambiguous_metadata(tmp_path):
             "bc_wells": ["01_01_01__s1", "01_01_01__s2"],
             "sample": ["sample_01_01_01", "sample_01_01_01"],
             "tscp_count": [1, 1],
+            "gene_count": [1, 1],
         }
     ).to_csv(combined_metadata, index=False)
     metadata_paths = [resolve_sublibrary_inputs(path)[1] for path in (sub1, sub2)]
 
     with pytest.raises(ValueError, match="mapping is ambiguous"):
         resolve_sublibrary_labels([sub1, sub2], metadata_paths, combined_metadata)
+
+
+@pytest.mark.parametrize("column", ["tscp_count", "gene_count"])
+def test_rejects_incomplete_counts(tmp_path, column):
+    root = _write_sublibrary(
+        tmp_path / "sub", ["cell"], [_row("cell", "g1", "G1", True)]
+    )
+    transcript, metadata = resolve_sublibrary_inputs(root)
+    frame = pd.read_csv(metadata)
+    frame.loc[0, column] = 99
+    frame.to_csv(metadata, index=False)
+    with pytest.raises(ValueError, match=f"Reconstructed {column} differs"):
+        build_parse_sublibrary_adata(transcript, metadata)
+
+
+def test_rejects_missing_stable_gene_id(tmp_path):
+    root = _write_sublibrary(
+        tmp_path / "sub", ["cell"], [_row("cell", None, "G1", True)]
+    )
+    with pytest.raises(ValueError, match="Missing stable gene ID"):
+        build_parse_sublibrary_adata(*resolve_sublibrary_inputs(root))
+
+
+@pytest.mark.parametrize("chunk_size", [1, 10])
+def test_rejects_gene_id_in_multiple_genomes(tmp_path, chunk_size):
+    rows = [_row("cell", "g1", "G1", True), _row("cell", "g1", "G1", False)]
+    rows[1][1] = "different_genome"
+    root = _write_sublibrary(tmp_path / "sub", ["cell"], rows)
+    with pytest.raises(ValueError, match="maps to multiple genomes"):
+        build_parse_sublibrary_adata(
+            *resolve_sublibrary_inputs(root), chunk_size=chunk_size
+        )
+
+
+@pytest.mark.parametrize(
+    "column,value", [("gene", "other_id"), ("genome", "other_genome")]
+)
+def test_combination_rejects_conflicting_features(tmp_path, column, value):
+    root = _write_sublibrary(
+        tmp_path / "sub", ["cell"], [_row("cell", "g1", "G1", True)]
+    )
+    first = build_parse_sublibrary_adata(
+        *resolve_sublibrary_inputs(root), gene_column="gene_name"
+    )
+    second = first.copy()
+    second.var.loc["G1", column] = value
+    with pytest.raises(ValueError, match=f"conflicting {column}"):
+        combine_parse_sublibraries([first, second])
+
+
+def test_output_formats_preserve_primary_matrix(tmp_path):
+    from velocitykit.io import read_velocity_input
+
+    root = _write_sublibrary(
+        tmp_path / "sub", ["cell"],
+        [_row("cell", "g1", "G1", True), _row("cell", "g1", "G1", False)],
+    )
+    adata = build_parse_sublibrary_adata(*resolve_sublibrary_inputs(root))
+    h5ad, loom = tmp_path / "result.h5ad", tmp_path / "result.loom"
+    _write_outputs(adata, str(h5ad), str(loom))
+    for path in (h5ad, loom):
+        loaded = read_velocity_input(str(path))
+        np.testing.assert_array_equal(loaded.X.toarray(), [[2]])
+        np.testing.assert_array_equal(loaded.layers["spliced"].toarray(), [[1]])
+        np.testing.assert_array_equal(loaded.layers["unspliced"].toarray(), [[1]])
+        assert loaded.var["genome"].tolist() == ["genome"]
+
+
+def test_output_failure_preserves_both_existing_files(tmp_path, monkeypatch):
+    from anndata import AnnData
+
+    h5ad, loom = tmp_path / "result.h5ad", tmp_path / "result.loom"
+    h5ad.write_bytes(b"old h5ad")
+    loom.write_bytes(b"old loom")
+
+    def fail(self, path):
+        Path(path).write_bytes(b"partial loom")
+        raise OSError("simulated write failure")
+
+    monkeypatch.setattr(AnnData, "write_loom", fail)
+    with pytest.raises(OSError, match="simulated write failure"):
+        _write_outputs(AnnData(np.ones((1, 1))), str(h5ad), str(loom))
+    assert h5ad.read_bytes() == b"old h5ad"
+    assert loom.read_bytes() == b"old loom"
+    assert sorted(path.name for path in tmp_path.iterdir()) == [
+        "result.h5ad", "result.loom"
+    ]
+
+
+def test_output_paths_are_validated_before_writing(tmp_path):
+    from anndata import AnnData
+
+    output = tmp_path / "result.loom"
+    output.write_bytes(b"existing")
+    with pytest.raises(ValueError, match="extension"):
+        _write_outputs(AnnData(np.ones((1, 1))), str(output), None)
+    assert output.read_bytes() == b"existing"
+    alias = tmp_path / "alias.h5ad"
+    os.link(output, alias)
+    with pytest.raises(ValueError, match="distinct paths"):
+        _write_outputs(AnnData(np.ones((1, 1))), str(alias), str(output))
+
+
+def test_combination_checks_genome_even_when_symbols_differ(tmp_path):
+    root = _write_sublibrary(
+        tmp_path / "sub", ["cell"], [_row("cell", "g1", "G1", True)]
+    )
+    first = build_parse_sublibrary_adata(
+        *resolve_sublibrary_inputs(root), gene_column="gene_name"
+    )
+    second = first.copy()
+    second.var_names = ["OTHER_SYMBOL"]
+    second.var["genome"] = "other_genome"
+    with pytest.raises(ValueError, match="multiple genomes across sublibraries"):
+        combine_parse_sublibraries([first, second])
+
+
+def test_successful_write_replaces_existing_output(tmp_path):
+    from anndata import AnnData, read_h5ad
+
+    output = tmp_path / "result.h5ad"
+    output.write_bytes(b"old result")
+    _write_outputs(AnnData(np.ones((1, 1))), str(output), None)
+    np.testing.assert_array_equal(read_h5ad(output).X, [[1]])
+    assert list(tmp_path.iterdir()) == [output]
