@@ -1,7 +1,7 @@
 # velocity-kit
 
 [![PyPI version](https://badge.fury.io/py/velocity-kit.svg)](https://badge.fury.io/py/velocity-kit)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 
 ## Overview
 
@@ -589,7 +589,7 @@ combine log and validate each sublibrary's `__sN` suffix mapping.
 
 ### Core Dependencies
 
-- Python ≥ 3.8
+- Python ≥ 3.9
 - anndata ≥ 0.8.0, < 0.13 (Loom export compatibility)
 - h5py ≥ 3.10.0
 - leidenalg ≥ 0.8.0
@@ -606,6 +606,7 @@ combine log and validate each sublibrary's `__sN` suffix mapping.
 
 ### Compatibility Notes
 
+- Python 3.9 or newer is required; Python 3.8 is no longer supported.
 - ✅ **NumPy 2.x**: Fully supported as of v0.2.0
 - ✅ **Pandas 2.x**: Categorical column handling fixed in v0.2.0
 - ⚠️ **Python 3.7**: Support dropped in v0.2.0. Use velocity-kit v0.1.x for Python 3.7

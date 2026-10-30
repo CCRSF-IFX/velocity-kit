@@ -182,7 +182,7 @@ When you're ready to publish to production PyPI:
      - ✅ Dual-run subtraction method
      - ✅ Flexible output formats (h5ad and/or loom)
      - ✅ Optional scVelo preprocessing
-     - ✅ Python 3.7-3.14 support
+     - ✅ Python 3.9+ required; CI tests Python 3.9-3.13
      
      ### Installation
      ```bash
