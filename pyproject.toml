@@ -27,7 +27,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "anndata>=0.8.0",
+    "anndata>=0.8.0,<0.13",  # AnnData 0.13 adds a None layer key that breaks Loom export.
     "h5py>=3.10.0; python_version >= '3.8'",
     "leidenalg>=0.8.0",
     "loompy>=3.0.6",

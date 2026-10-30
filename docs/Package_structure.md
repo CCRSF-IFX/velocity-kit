@@ -181,7 +181,7 @@ adata.write_h5ad("output.h5ad")
 ## Dependencies
 
 ### Core Requirements (Python ≥3.7)
-- anndata ≥ 0.8.0
+- anndata ≥ 0.8.0, < 0.13 (Loom export compatibility)
 - h5py ≥ 3.8.0
 - numpy ≥ 1.21.0
 - pandas ≥ 1.3.0

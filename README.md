@@ -590,7 +590,7 @@ combine log and validate each sublibrary's `__sN` suffix mapping.
 ### Core Dependencies
 
 - Python ≥ 3.8
-- anndata ≥ 0.8.0
+- anndata ≥ 0.8.0, < 0.13 (Loom export compatibility)
 - h5py ≥ 3.10.0
 - leidenalg ≥ 0.8.0
 - loompy ≥ 3.0.6

@@ -104,9 +104,13 @@ anndata is the core data structure for single-cell analysis.
 | 0.8.x           | ✅         | ✅         | ✅         | ✅          | ✅          | ✅          | Stable API |
 | 0.9.x - 0.10.x  | ✅         | ✅         | ✅         | ✅          | ✅          | ✅          | |
 
-**Constraint**: `anndata>=0.8.0`
+**Constraint**: `anndata>=0.8.0,<0.13`
+
+AnnData 0.13 exposes the primary matrix as `layers[None]`, which its Loom
+writer passes to Loompy and causes an `AttributeError`. Keep the upper bound
+until the Loom writer supports this layer representation.
+
 - ✅ Works on all Python versions 3.7-3.12
-- No upper bound needed (stable API)
 
 ### tqdm
 
